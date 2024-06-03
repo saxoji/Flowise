@@ -71,8 +71,8 @@ const AboutDialog = ({ show, onCancel }) => {
                                         {data.currentVersion}
                                     </TableCell>
                                     <TableCell component='th' scope='row'>
-                                        <a target='_blank' rel='noreferrer' href={data.html_url}>
-                                            {data.name}
+                                        <a target='_blank' rel='noreferrer' href='https://wwww.linkbricks.com'>
+                                        Check Linkbricks
                                         </a>
                                     </TableCell>
                                     <TableCell>{moment(data.published_at).fromNow()}</TableCell>
