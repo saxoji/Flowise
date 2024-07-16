@@ -93,4 +93,5 @@ AboutDialog.propTypes = {
     onCancel: PropTypes.func
 }
 
+
 export default AboutDialog
