@@ -71,7 +71,7 @@ const AboutDialog = ({ show, onCancel }) => {
                                         {data.currentVersion}
                                     </TableCell>
                                     <TableCell component='th' scope='row'>
-                                        <a target='_blank' rel='noreferrer' href='https://wwww.linkbricks.com'>
+                                        <a target='_blank' rel='noreferrer' href='https://www.linkbricks.com'>
                                         Check Linkbricks
                                         </a>
                                     </TableCell>
