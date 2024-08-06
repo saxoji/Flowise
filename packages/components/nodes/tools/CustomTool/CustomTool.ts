@@ -29,12 +29,6 @@ class CustomTool_Tools implements INode {
                 name: 'selectedTool',
                 type: 'asyncOptions',
                 loadMethod: 'listTools'
-            },
-            {
-                label: 'Return Direct',
-                name: 'returnDirect',
-                type: 'boolean',
-                optional: true
             }
         ]
         this.baseClasses = [this.type, 'Tool', ...getBaseClasses(DynamicStructuredTool)]
@@ -72,7 +66,6 @@ class CustomTool_Tools implements INode {
         const customToolName = nodeData.inputs?.customToolName as string
         const customToolDesc = nodeData.inputs?.customToolDesc as string
         const customToolSchema = nodeData.inputs?.customToolSchema as string
-        const customToolReturnDirect = nodeData.inputs?.returnDirect as boolean
 
         const appDataSource = options.appDataSource as DataSource
         const databaseEntities = options.databaseEntities as IDatabaseEntity
@@ -104,7 +97,7 @@ class CustomTool_Tools implements INode {
             let dynamicStructuredTool = new DynamicStructuredTool(obj)
             dynamicStructuredTool.setVariables(variables)
             dynamicStructuredTool.setFlowObject(flow)
-            dynamicStructuredTool.returnDirect = customToolReturnDirect
+
             return dynamicStructuredTool
         } catch (e) {
             throw new Error(e)
