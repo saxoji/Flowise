@@ -17,19 +17,8 @@ export class ChatflowPool {
      * @param {ICommonObject} overrideConfig
      */
     add(chatflowid: string, endingNodeData: INodeData | undefined, startingNodes: IReactFlowNode[], overrideConfig?: ICommonObject) {
-        const removePrefix = (colName: string) => colName.replace(/^"[^"]*"/, '') // Regex to remove prefix
-
-        const updatedStartingNodes = startingNodes.map((node) => ({
-            ...node,
-            data: {
-                ...node.data,
-                label: removePrefix(node.data.label)
-                // Add more properties if needed
-            }
-        }))
-
         this.activeChatflows[chatflowid] = {
-            startingNodes: updatedStartingNodes,
+            startingNodes,
             endingNodeData,
             inSync: true
         }
