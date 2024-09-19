@@ -40,7 +40,7 @@ function a11yProps(index) {
 
 const embedPopupHtmlCode = (chatflowid) => {
     return `<script type="module">
-    import Chatbot from "https://cdn.jsdelivr.net/gh/saxoji/FlowiseChatEmbed@latest/dist/web.js"
+    import Chatbot from "https://cdn.jsdelivr.net/gh/saxoji/FlowiseChatEmbed@main/dist/web.js"
     Chatbot.init({
         chatflowid: "${chatflowid}",
         apiHost: "${baseURL}",
@@ -61,7 +61,7 @@ const App = () => {
 const embedFullpageHtmlCode = (chatflowid) => {
     return `<flowise-fullchatbot></flowise-fullchatbot>
 <script type="module">
-    import Chatbot from "https://cdn.jsdelivr.net/gh/saxoji/FlowiseChatEmbed@latest/dist/web.js"
+    import Chatbot from "https://cdn.jsdelivr.net/gh/saxoji/FlowiseChatEmbed@main/dist/web.js"
     Chatbot.initFull({
         chatflowid: "${chatflowid}",
         apiHost: "${baseURL}",
@@ -238,7 +238,7 @@ const chatwindowConfig = (isReact = false) => {
 
 const embedPopupHtmlCodeCustomization = (chatflowid) => {
     return `<script type="module">
-    import Chatbot from "https://cdn.jsdelivr.net/gh/saxoji/FlowiseChatEmbed@latest/dist/web.js"
+    import Chatbot from "https://cdn.jsdelivr.net/gh/saxoji/FlowiseChatEmbed@main/dist/web.js"
     Chatbot.init({
         chatflowid: "${chatflowid}",
         apiHost: "${baseURL}",
@@ -275,7 +275,7 @@ const App = () => {
 const embedFullpageHtmlCodeCustomization = (chatflowid) => {
     return `<flowise-fullchatbot></flowise-fullchatbot>
 <script type="module">
-    import Chatbot from "https://cdn.jsdelivr.net/gh/saxoji/FlowiseChatEmbed@latest/dist/web.js"
+    import Chatbot from "https://cdn.jsdelivr.net/gh/saxoji/FlowiseChatEmbed@main/dist/web.js"
     Chatbot.initFull({
         chatflowid: "${chatflowid}",
         apiHost: "${baseURL}",
@@ -372,7 +372,7 @@ const EmbedChat = ({ chatflowid }) => {
                                     >
                                         version
                                     </a>
-                                    :&nbsp;<code>{`https://cdn.jsdelivr.net/gh/saxoji/FlowiseChatEmbed@latest/dist/web.js`}</code>
+                                    :&nbsp;<code>{`https://cdn.jsdelivr.net/gh/saxoji/FlowiseChatEmbed@main/dist/web.js`}</code>
                                 </p>
                             </span>
                             <div style={{ height: 10 }}></div>
