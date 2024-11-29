@@ -56,7 +56,7 @@ const AboutDialog = ({ show, onCancel }) => {
             aria-describedby='alert-dialog-description'
         >
             <DialogTitle sx={{ fontSize: '1rem' }} id='alert-dialog-title'>
-                Flowise Version
+                Linkbricks Horizon-AI LLM Workflow Version
             </DialogTitle>
             <DialogContent>
                 {data && (
@@ -75,8 +75,8 @@ const AboutDialog = ({ show, onCancel }) => {
                                         {data.currentVersion}
                                     </TableCell>
                                     <TableCell component='th' scope='row'>
-                                        <a target='_blank' rel='noreferrer' href={data.html_url}>
-                                            {data.name}
+                                        <a target='_blank' rel='noreferrer' href='https://www.horizonai.ai'>
+                                            Check Horizon AI
                                         </a>
                                     </TableCell>
                                     <TableCell>{moment(data.published_at).fromNow()}</TableCell>
