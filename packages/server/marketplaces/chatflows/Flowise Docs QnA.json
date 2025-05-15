@@ -1,5 +1,5 @@
 {
-    "description": "Flowise Docs Github QnA using Retrieval Augmented Generation (RAG)",
+    "description": "Linkbricks Horizon-AI Docs Github QnA using Retrieval Augmented Generation (RAG)",
     "badge": "POPULAR",
     "usecases": ["Documents QnA"],
     "framework": ["Langchain"],
