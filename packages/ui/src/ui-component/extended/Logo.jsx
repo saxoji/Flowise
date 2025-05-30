@@ -1,6 +1,5 @@
-import logo from '@/assets/images/flowise_white.svg'
-import logoDark from '@/assets/images/flowise_dark.svg'
-
+import logo from '@/assets/images/flowise_white.png' // .svg에서 .png로 변경
+import logoDark from '@/assets/images/flowise_dark.png' // .svg에서 .png로 변경
 import { useSelector } from 'react-redux'
 
 // ==============================|| LOGO ||============================== //
@@ -13,7 +12,7 @@ const Logo = () => {
             <img
                 style={{ objectFit: 'contain', height: 'auto', width: 150 }}
                 src={customization.isDarkMode ? logoDark : logo}
-                alt='Flowise'
+                alt='Linkbricks Horizon-AI'
             />
         </div>
     )
