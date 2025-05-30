@@ -251,20 +251,7 @@ const Header = ({ handleLeftDrawerToggle }) => {
                 )}
             </Box>
             {isCloud || isOpenSource ? (
-                <Box
-                    sx={{
-                        flexGrow: 1,
-                        px: 4,
-                        display: 'flex',
-                        alignItems: 'center',
-                        '& span': {
-                            display: 'flex',
-                            alignItems: 'center'
-                        }
-                    }}
-                >
-                    <GitHubStarButton starCount={starCount} isDark={isDark} />
-                </Box>
+                <Box sx={{ flexGrow: 1 }} />
             ) : (
                 <Box sx={{ flexGrow: 1 }} />
             )}
