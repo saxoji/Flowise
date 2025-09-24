@@ -1543,14 +1543,37 @@ export const executeJavaScriptCode = async (
             ? defaultAllowBuiltInDep.concat(process.env.TOOL_FUNCTION_BUILTIN_DEP.split(','))
             : defaultAllowBuiltInDep
         const externalDeps = process.env.TOOL_FUNCTION_EXTERNAL_DEP ? process.env.TOOL_FUNCTION_EXTERNAL_DEP.split(',') : []
-        const deps = process.env.ALLOW_BUILTIN_DEP === 'true' ? availableDependencies.concat(externalDeps) : externalDeps
+        // Always use availableDependencies regardless of ALLOW_BUILTIN_DEP setting
+        const deps = availableDependencies.concat(externalDeps)
+        
+        // Debug: Log NodeVM configuration
+        /*
+        console.log('NodeVM Configuration:', {
+            deps: deps.filter(d => d.includes('node-fetch') || d.includes('replicate')),
+            builtinDeps: builtinDeps,
+            rootPaths: [
+                process.cwd(),
+                path.join(process.cwd(), 'node_modules'),
+                '/usr/src/node_modules'
+            ]
+        })
+        */
 
         const defaultNodeVMOptions: any = {
             console: 'inherit',
             sandbox,
             require: {
                 external: { modules: deps },
-                builtin: builtinDeps
+                builtin: builtinDeps,
+                // Add multiple root paths for module resolution
+                root: [
+                    process.cwd(),
+                    path.join(process.cwd(), 'node_modules'),
+                    path.join(process.cwd(), 'packages', 'components', 'node_modules'),
+                    path.join(process.cwd(), 'packages', 'server', 'node_modules'),
+                    '/usr/src/node_modules',
+                    '/usr/src/packages/components/node_modules'
+                ]
             },
             eval: false,
             wasm: false,
