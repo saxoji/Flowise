@@ -6,6 +6,7 @@ import { CodeBlock } from '../markdown/CodeBlock'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeMathjax from 'rehype-mathjax'
+import rehypeRaw from 'rehype-raw'
 
 /**
  * Checks if text likely contains LaTeX math notation
@@ -90,7 +91,7 @@ export const MemoizedReactMarkdown = memo(
 
         const rehypePlugins = useMemo(() => {
             if (props.rehypePlugins) return props.rehypePlugins
-            return shouldEnableMath ? [rehypeMathjax] : []
+            return shouldEnableMath ? [rehypeMathjax, rehypeRaw] : [rehypeRaw]
         }, [props.rehypePlugins, shouldEnableMath])
 
         return (
