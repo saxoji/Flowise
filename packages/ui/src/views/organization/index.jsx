@@ -298,7 +298,7 @@ const OrganizationSetupPage = () => {
                                             onChange={(e) => setExistingUsername(e.target.value)}
                                         />
                                         <Typography variant='caption'>
-                                            <i>Existing username that was set as FLOWISE_USERNAME environment variable</i>
+                                            <i>Existing username that was set in environment variable</i>
                                         </Typography>
                                     </Box>
                                     <Box>
@@ -316,7 +316,7 @@ const OrganizationSetupPage = () => {
                                             onChange={(e) => setExistingPassword(e.target.value)}
                                         />
                                         <Typography variant='caption'>
-                                            <i>Existing password that was set as FLOWISE_PASSWORD environment variable</i>
+                                            <i>Existing password that was set in environment variable</i>
                                         </Typography>
                                     </Box>
                                     <Divider>
