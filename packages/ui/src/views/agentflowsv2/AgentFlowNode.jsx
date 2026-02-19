@@ -25,7 +25,8 @@ import {
     IconCode,
     IconWorldWww,
     IconPhoto,
-    IconBrandGoogle
+    IconBrandGoogle,
+    IconBrowserCheck
 } from '@tabler/icons-react'
 import StopCircleIcon from '@mui/icons-material/StopCircle'
 import CancelIcon from '@mui/icons-material/Cancel'
@@ -149,6 +150,19 @@ const AgentFlowNode = ({ data }) => {
                 return <IconWorldWww size={14} color={'white'} />
             case 'googleSearch':
                 return <IconBrandGoogle size={14} color={'white'} />
+            case 'codeExecution':
+                return <IconCode size={14} color={'white'} />
+            default:
+                return null
+        }
+    }
+
+    const getBuiltInAnthropicToolIcon = (toolName) => {
+        switch (toolName) {
+            case 'web_search_20250305':
+                return <IconWorldWww size={14} color={'white'} />
+            case 'web_fetch_20250910':
+                return <IconBrowserCheck size={14} color={'white'} />
             default:
                 return null
         }
@@ -179,6 +193,8 @@ const AgentFlowNode = ({ data }) => {
                     componentNode?.deprecateMessage ??
                         'This node will be deprecated in the next release. Change to a new node tagged with NEW'
                 )
+            } else if (componentNode.warning) {
+                setWarningMessage(componentNode.warning)
             } else {
                 setWarningMessage('')
             }
@@ -455,6 +471,16 @@ const AgentFlowNode = ({ data }) => {
                                             : [],
                                         toolProperty: 'builtInTool',
                                         isBuiltInGemini: true
+                                    },
+                                    {
+                                        tools: data.inputs?.agentToolsBuiltInAnthropic
+                                            ? (typeof data.inputs.agentToolsBuiltInAnthropic === 'string'
+                                                  ? JSON.parse(data.inputs.agentToolsBuiltInAnthropic)
+                                                  : data.inputs.agentToolsBuiltInAnthropic
+                                              ).map((tool) => ({ builtInTool: tool }))
+                                            : [],
+                                        toolProperty: 'builtInTool',
+                                        isBuiltInAnthropic: true
                                     }
                                 ]
 
@@ -518,6 +544,32 @@ const AgentFlowNode = ({ data }) => {
                                                     // Handle built-in Gemini tools with icons
                                                     if (config.isBuiltInGemini) {
                                                         const icon = getBuiltInGeminiToolIcon(toolName)
+                                                        if (!icon) return []
+
+                                                        return [
+                                                            <Box
+                                                                key={`tool-${configIndex}-${toolIndex}`}
+                                                                sx={{
+                                                                    width: 20,
+                                                                    height: 20,
+                                                                    borderRadius: '50%',
+                                                                    backgroundColor: customization.isDarkMode
+                                                                        ? darken(data.color, 0.5)
+                                                                        : darken(data.color, 0.2),
+                                                                    display: 'flex',
+                                                                    justifyContent: 'center',
+                                                                    alignItems: 'center',
+                                                                    padding: 0.2
+                                                                }}
+                                                            >
+                                                                {icon}
+                                                            </Box>
+                                                        ]
+                                                    }
+
+                                                    // Handle built-in Anthropic tools with icons
+                                                    if (config.isBuiltInAnthropic) {
+                                                        const icon = getBuiltInAnthropicToolIcon(toolName)
                                                         if (!icon) return []
 
                                                         return [

@@ -1,20 +1,29 @@
 import { NextFunction, Request, Response } from 'express'
 import { StatusCodes } from 'http-status-codes'
-import { LoginMethodErrorMessage, LoginMethodService } from '../services/login-method.service'
+import { InternalFlowiseError } from '../../errors/internalFlowiseError'
+import { Platform } from '../../Interface'
+import { GeneralErrorMessage } from '../../utils/constants'
 import { getRunningExpressApp } from '../../utils/getRunningExpressApp'
 import { LoginMethod, LoginMethodStatus } from '../database/entities/login-method.entity'
-import { InternalFlowiseError } from '../../errors/internalFlowiseError'
-import { decrypt } from '../utils/encryption.util'
-import AzureSSO from '../sso/AzureSSO'
-import GoogleSSO from '../sso/GoogleSSO'
-import Auth0SSO from '../sso/Auth0SSO'
+import { LoginMethodErrorMessage, LoginMethodService } from '../services/login-method.service'
 import { OrganizationService } from '../services/organization.service'
-import { Platform } from '../../Interface'
+import Auth0SSO from '../sso/Auth0SSO'
+import AzureSSO from '../sso/AzureSSO'
 import GithubSSO from '../sso/GithubSSO'
+import GoogleSSO from '../sso/GoogleSSO'
+import { decrypt } from '../utils/encryption.util'
 
 export class LoginMethodController {
+    private assertEnterprisePlatform(): void {
+        const platformType = getRunningExpressApp().identityManager.getPlatformType()
+        if (platformType === Platform.CLOUD || platformType === Platform.OPEN_SOURCE) {
+            throw new InternalFlowiseError(StatusCodes.FORBIDDEN, GeneralErrorMessage.FORBIDDEN)
+        }
+    }
+
     public async create(req: Request, res: Response, next: NextFunction) {
         try {
+            this.assertEnterprisePlatform()
             const loginMethodService = new LoginMethodService()
             const loginMethod = await loginMethodService.createLoginMethod(req.body)
             return res.status(StatusCodes.CREATED).json(loginMethod)
@@ -63,6 +72,7 @@ export class LoginMethodController {
     public async read(req: Request, res: Response, next: NextFunction) {
         let queryRunner
         try {
+            this.assertEnterprisePlatform()
             queryRunner = getRunningExpressApp().AppDataSource.createQueryRunner()
             await queryRunner.connect()
             const query = req.query as Partial<LoginMethod>
@@ -82,13 +92,15 @@ export class LoginMethodController {
                 loginMethod = await loginMethodService.readLoginMethodById(query.id, queryRunner)
                 if (!loginMethod) throw new InternalFlowiseError(StatusCodes.NOT_FOUND, LoginMethodErrorMessage.LOGIN_METHOD_NOT_FOUND)
                 loginMethod.config = JSON.parse(await decrypt(loginMethod.config))
-            } else {
+            } else if (query.organizationId) {
                 loginMethod = await loginMethodService.readLoginMethodByOrganizationId(query.organizationId, queryRunner)
 
                 for (let method of loginMethod) {
                     method.config = JSON.parse(await decrypt(method.config))
                 }
                 loginMethodConfig.providers = loginMethod
+            } else {
+                throw new InternalFlowiseError(StatusCodes.BAD_REQUEST, GeneralErrorMessage.UNHANDLED_EDGE_CASE)
             }
             return res.status(StatusCodes.OK).json(loginMethodConfig)
         } catch (error) {
@@ -99,6 +111,7 @@ export class LoginMethodController {
     }
     public async update(req: Request, res: Response, next: NextFunction) {
         try {
+            this.assertEnterprisePlatform()
             const loginMethodService = new LoginMethodService()
             const loginMethod = await loginMethodService.createOrUpdateConfig(req.body)
             if (loginMethod?.status === 'OK' && loginMethod?.organizationId) {

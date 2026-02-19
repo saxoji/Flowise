@@ -58,6 +58,7 @@ import { ChatMessage } from '../database/entities/ChatMessage'
 import { Telemetry } from './telemetry'
 import { getWorkspaceSearchOptions } from '../enterprise/utils/ControllerServiceUtils'
 import { UsageCacheManager } from '../UsageCacheManager'
+import { generateTTSForResponseStream, shouldAutoPlayTTS } from './buildChatflow'
 
 interface IWaitingNode {
     nodeId: string
@@ -488,6 +489,14 @@ export const resolveVariables = async (
                 return
             }
 
+            // Handle arrays of config objects
+            if (Array.isArray(configObj)) {
+                for (const item of configObj) {
+                    await processConfigParams(item, configParamWithAcceptVariables)
+                }
+                return
+            }
+
             for (const [key, value] of Object.entries(configObj)) {
                 // Only resolve variables for parameters that accept them
                 // Example: requestsGetHeaders is in configParamWithAcceptVariables, so resolve "Bearer {{ $vars.TOKEN }}"
@@ -527,12 +536,44 @@ export const resolveVariables = async (
                 // STEP 5: Look for the config object (paramName + "Config")
                 // Example: Look for "agentSelectedToolConfig" in the inputs
                 const configParamName = paramWithLoadConfig + 'Config'
-                const configValue = findParamValue(paramsObj, configParamName)
 
-                // STEP 6: Process config object to resolve variables
+                // Find all config values (handle arrays)
+                const findAllConfigValues = (obj: any, paramName: string): any[] => {
+                    const results: any[] = []
+
+                    if (typeof obj !== 'object' || obj === null) {
+                        return results
+                    }
+
+                    // Handle arrays (e.g., agentTools array)
+                    if (Array.isArray(obj)) {
+                        for (const item of obj) {
+                            results.push(...findAllConfigValues(item, paramName))
+                        }
+                        return results
+                    }
+
+                    // Direct property match
+                    if (Object.prototype.hasOwnProperty.call(obj, paramName)) {
+                        results.push(obj[paramName])
+                    }
+
+                    // Recursively search nested objects
+                    for (const value of Object.values(obj)) {
+                        results.push(...findAllConfigValues(value, paramName))
+                    }
+
+                    return results
+                }
+
+                const configValues = findAllConfigValues(paramsObj, configParamName)
+
+                // STEP 6: Process all config objects to resolve variables
                 // Example: Resolve "Bearer {{ $vars.TOKEN }}" in requestsGetHeaders
-                if (configValue && configParamWithAcceptVariables.length > 0) {
-                    await processConfigParams(configValue, configParamWithAcceptVariables)
+                if (configValues.length > 0 && configParamWithAcceptVariables.length > 0) {
+                    for (const configValue of configValues) {
+                        await processConfigParams(configValue, configParamWithAcceptVariables)
+                    }
                 }
             }
         }
@@ -1194,7 +1235,8 @@ const executeNode = async ({
                         index: i,
                         value: item,
                         isFirst: i === 0,
-                        isLast: i === results.input.iterationInput.length - 1
+                        isLast: i === results.input.iterationInput.length - 1,
+                        sessionId: sessionId
                     }
 
                     try {
@@ -1462,7 +1504,7 @@ export const executeAgentFlow = async ({
     const uploads = incomingInput.uploads
     const userMessageDateTime = new Date()
     const chatflowid = chatflow.id
-    const sessionId = overrideConfig.sessionId || chatId
+    const sessionId = iterationContext?.sessionId || overrideConfig.sessionId || chatId
     const humanInput: IHumanInput | undefined = incomingInput.humanInput
 
     // Validate history schema if provided
@@ -1614,7 +1656,8 @@ export const executeAgentFlow = async ({
     }
 
     // If it is human input, find the last checkpoint and resume
-    if (humanInput) {
+    // Skip human input resumption for recursive iteration calls - they should start fresh
+    if (humanInput && !(isRecursive && iterationContext)) {
         if (!previousExecution) {
             throw new Error(`No previous execution found for session ${sessionId}`)
         }
@@ -1725,7 +1768,7 @@ export const executeAgentFlow = async ({
         })
 
         if (parentExecution) {
-            logger.debug(`   📝 Using parent execution ID: ${parentExecutionId} for recursive call`)
+            logger.debug(`   📝 Using parent execution ID: ${parentExecutionId} for recursive call (iteration: ${!!iterationContext})`)
             newExecution = parentExecution
         } else {
             console.warn(`   ⚠️ Parent execution ID ${parentExecutionId} not found, will create new execution`)
@@ -1819,6 +1862,11 @@ export const executeAgentFlow = async ({
 
     let iterations = 0
     let currentHumanInput = humanInput
+
+    // For iteration calls, clear human input since they should start fresh
+    if (isRecursive && iterationContext && humanInput) {
+        currentHumanInput = undefined
+    }
 
     let analyticHandlers: AnalyticHandler | undefined
     let parentTraceIds: ICommonObject | undefined
@@ -2074,7 +2122,62 @@ export const executeAgentFlow = async ({
 
     // check if last agentFlowExecutedData.data.output contains the key "content"
     const lastNodeOutput = agentFlowExecutedData[agentFlowExecutedData.length - 1].data?.output as ICommonObject | undefined
-    const content = (lastNodeOutput?.content as string) ?? ' '
+    let content = (lastNodeOutput?.content as string) ?? ' '
+
+    /* Check for post-processing settings */
+    let chatflowConfig: ICommonObject = {}
+    try {
+        if (chatflow.chatbotConfig) {
+            chatflowConfig = typeof chatflow.chatbotConfig === 'string' ? JSON.parse(chatflow.chatbotConfig) : chatflow.chatbotConfig
+        }
+    } catch (e) {
+        logger.error('[server]: Error parsing chatflow config:', e)
+    }
+
+    if (chatflowConfig?.postProcessing?.enabled === true && content) {
+        try {
+            const postProcessingFunction = JSON.parse(chatflowConfig?.postProcessing?.customFunction)
+            const nodeInstanceFilePath = componentNodes['customFunctionAgentflow'].filePath as string
+            const nodeModule = await import(nodeInstanceFilePath)
+            //set the outputs.output to EndingNode to prevent json escaping of content...
+            const nodeData = {
+                inputs: { customFunctionJavascriptFunction: postProcessingFunction }
+            }
+            const runtimeChatHistory = agentflowRuntime.chatHistory || []
+            const chatHistory = [...pastChatHistory, ...runtimeChatHistory]
+            const options: ICommonObject = {
+                chatflowid: chatflow.id,
+                sessionId,
+                chatId,
+                input: question || form,
+                postProcessing: {
+                    rawOutput: content,
+                    chatHistory: cloneDeep(chatHistory),
+                    sourceDocuments: lastNodeOutput?.sourceDocuments ? cloneDeep(lastNodeOutput.sourceDocuments) : undefined,
+                    usedTools: lastNodeOutput?.usedTools ? cloneDeep(lastNodeOutput.usedTools) : undefined,
+                    artifacts: lastNodeOutput?.artifacts ? cloneDeep(lastNodeOutput.artifacts) : undefined,
+                    fileAnnotations: lastNodeOutput?.fileAnnotations ? cloneDeep(lastNodeOutput.fileAnnotations) : undefined
+                },
+                appDataSource,
+                databaseEntities,
+                workspaceId,
+                orgId,
+                logger
+            }
+            const customFuncNodeInstance = new nodeModule.nodeClass()
+            const customFunctionResponse = await customFuncNodeInstance.run(nodeData, question || form, options)
+            const moderatedResponse = customFunctionResponse.output.content
+            if (typeof moderatedResponse === 'string') {
+                content = moderatedResponse
+            } else if (typeof moderatedResponse === 'object') {
+                content = '```json\n' + JSON.stringify(moderatedResponse, null, 2) + '\n```'
+            } else {
+                content = moderatedResponse
+            }
+        } catch (e) {
+            logger.error('[server]: Post Processing Error:', e)
+        }
+    }
 
     // remove credentialId from agentFlowExecutedData
     agentFlowExecutedData = agentFlowExecutedData.map((data) => _removeCredentialId(data))
@@ -2207,6 +2310,28 @@ export const executeAgentFlow = async ({
     result.agentFlowExecutedData = agentFlowExecutedData
 
     if (sessionId) result.sessionId = sessionId
+
+    if (shouldAutoPlayTTS(chatflow.textToSpeech) && result.text) {
+        const options = {
+            orgId,
+            chatflowid,
+            chatId,
+            appDataSource,
+            databaseEntities
+        }
+
+        if (sseStreamer) {
+            await generateTTSForResponseStream(
+                result.text,
+                chatflow.textToSpeech,
+                options,
+                chatId,
+                chatMessage?.id,
+                sseStreamer,
+                abortController
+            )
+        }
+    }
 
     return result
 }

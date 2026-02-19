@@ -114,7 +114,7 @@ export class MCPToolkit extends BaseToolkit {
         const res = await Promise.allSettled(toolsPromises)
         const errors = res.filter((r) => r.status === 'rejected')
         if (errors.length !== 0) {
-            console.error('MCP Tools falied to be resolved', errors)
+            console.error('MCP Tools failed to be resolved', errors)
         }
         const successes = res.filter((r) => r.status === 'fulfilled').map((r) => r.value)
         return successes
@@ -246,7 +246,7 @@ export const validateCommandInjection = (args: string[]): void => {
 }
 
 export const validateEnvironmentVariables = (env: Record<string, any>): void => {
-    const dangerousEnvVars = ['PATH', 'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH']
+    const dangerousEnvVars = ['PATH', 'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH', 'NODE_OPTIONS']
 
     for (const [key, value] of Object.entries(env)) {
         if (dangerousEnvVars.includes(key)) {
