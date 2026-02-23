@@ -39,6 +39,14 @@ class CustomTool_Tools implements INode {
                 optional: true
             },
             {
+                label: 'Tool Enabled',
+                name: 'toolEnabled',
+                description: 'When disabled, this tool will not be available to the agent even if connected in the workflow',
+                type: 'boolean',
+                default: true,
+                optional: true
+            },
+            {
                 label: 'Custom Tool Name',
                 name: 'customToolName',
                 type: 'string',
@@ -94,6 +102,11 @@ class CustomTool_Tools implements INode {
     }
 
     async init(nodeData: INodeData, _: string, options: ICommonObject): Promise<any> {
+        const toolEnabled = nodeData.inputs?.toolEnabled
+        if (toolEnabled === false || toolEnabled === 'false') {
+            return null
+        }
+
         const selectedToolId = nodeData.inputs?.selectedTool as string
         const customToolFunc = nodeData.inputs?.customToolFunc as string
         const customToolName = nodeData.inputs?.customToolName as string

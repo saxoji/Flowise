@@ -189,7 +189,7 @@ class ToolAgent_Agents implements INode {
             // If the tool is set to returnDirect, stream the output to the client
             if (res.usedTools && res.usedTools.length) {
                 let inputTools = nodeData.inputs?.tools
-                inputTools = flatten(inputTools)
+                inputTools = flatten(inputTools).filter((t: any) => t != null)
                 for (const tool of res.usedTools) {
                     const inputTool = inputTools.find((inputTool: Tool) => inputTool.name === tool.tool)
                     if (inputTool && inputTool.returnDirect && shouldStreamResponse) {
@@ -275,7 +275,7 @@ const prepareAgent = async (
     const memory = nodeData.inputs?.memory as FlowiseMemory
     let systemMessage = nodeData.inputs?.systemMessage as string
     let tools = nodeData.inputs?.tools
-    tools = flatten(tools)
+    tools = flatten(tools).filter((t: any) => t != null)
     const memoryKey = memory.memoryKey ? memory.memoryKey : 'chat_history'
     const inputKey = memory.inputKey ? memory.inputKey : 'input'
     const prependMessages = options?.prependMessages

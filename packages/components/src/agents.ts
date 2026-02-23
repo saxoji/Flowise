@@ -312,7 +312,7 @@ export class AgentExecutor extends BaseChain<ChainValues, AgentExecutorOutput> {
 
         super(input)
         this.agent = agent
-        this.tools = input.tools
+        this.tools = (input.tools || []).filter((t: any) => t != null)
         this.handleParsingErrors = input.handleParsingErrors ?? this.handleParsingErrors
         /* Getting rid of this because RunnableAgent doesnt allow return direct
         if (this.agent._agentActionType() === "multi") {
