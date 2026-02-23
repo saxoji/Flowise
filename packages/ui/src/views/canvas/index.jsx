@@ -26,6 +26,9 @@ import AddNodes from './AddNodes'
 import ConfirmDialog from '@/ui-component/dialog/ConfirmDialog'
 import ChatPopUp from '@/views/chatmessage/ChatPopUp'
 import VectorStorePopUp from '@/views/vectorstore/VectorStorePopUp'
+// horizonai : start
+import EditNodeDialog from '@/views/agentflowsv2/EditNodeDialog'
+// horizonai : end
 import { flowContext } from '@/store/context/ReactFlowContext'
 
 // API
@@ -99,7 +102,10 @@ const Canvas = () => {
     const [isSyncNodesButtonEnabled, setIsSyncNodesButtonEnabled] = useState(false)
     const [isSnappingEnabled, setIsSnappingEnabled] = useState(false)
     const [isBackgroundEnabled, setIsBackgroundEnabled] = useState(true)
-
+    // horizonai : start
+    const [editNodeDialogOpen, setEditNodeDialogOpen] = useState(false)
+    const [editNodeDialogProps, setEditNodeDialogProps] = useState({})
+    // horizonai : end
     const reactFlowWrapper = useRef(null)
 
     const [lastUpdatedDateTime, setLasUpdatedDateTime] = useState('')
@@ -266,6 +272,24 @@ const Canvas = () => {
         )
     })
 
+    // horizonai : start
+    // eslint-disable-next-line
+    const onNodeDoubleClick = useCallback((event, node) => {
+        if (!node || !node.data) return
+        if (node.data.type === 'StickyNote') {
+            // dont show dialog for sticky notes
+            return
+        }
+
+        const dialogProps = {
+            data: node.data,
+            inputParams: node.data.inputParams.filter((inputParam) => !inputParam.hidden)
+        }
+
+        setEditNodeDialogProps(dialogProps)
+        setEditNodeDialogOpen(true)
+    }, [])
+    // horizonai : end
     const onDragOver = useCallback((event) => {
         event.preventDefault()
         event.dataTransfer.dropEffect = 'move'
@@ -588,6 +612,7 @@ const Canvas = () => {
                                 edges={edges}
                                 onNodesChange={onNodesChange}
                                 onNodeClick={onNodeClick}
+                                onNodeDoubleClick={onNodeDoubleClick}
                                 onEdgesChange={onEdgesChange}
                                 onDrop={onDrop}
                                 onDragOver={onDragOver}
@@ -657,6 +682,13 @@ const Canvas = () => {
                                 )}
                                 {isUpsertButtonEnabled && <VectorStorePopUp chatflowid={chatflowId} />}
                                 <ChatPopUp isAgentCanvas={isAgentCanvas} chatflowid={chatflowId} />
+                                {/* horizonai : start */}
+                                <EditNodeDialog
+                                    show={editNodeDialogOpen}
+                                    dialogProps={editNodeDialogProps}
+                                    onCancel={() => setEditNodeDialogOpen(false)}
+                                />
+                                {/* horizonai : end */}
                             </ReactFlow>
                         </div>
                     </div>
