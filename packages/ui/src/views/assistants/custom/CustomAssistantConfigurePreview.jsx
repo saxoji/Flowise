@@ -2,7 +2,6 @@ import { cloneDeep, set } from 'lodash'
 import { memo, useEffect, useState, useRef } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useNavigate, useParams } from 'react-router-dom'
-import { FullPageChat } from 'flowise-embed-react'
 import PropTypes from 'prop-types'
 
 // Hooks
@@ -58,12 +57,32 @@ import { initNode, showHideInputParams } from '@/utils/genericHelper'
 import useNotifier from '@/utils/useNotifier'
 import { toolAgentFlow } from './toolAgentFlow'
 
+// ===========================|| FlowiseFullPageChat (uses flowise-embed directly) ||=========================== //
+
+const FlowiseFullPageChat = ({ chatflowid, apiHost, chatflowConfig, theme }) => {
+    const ref = useRef(null)
+    const [initialized, setInitialized] = useState(false)
+
+    useEffect(() => {
+        import('flowise-embed/dist/web.js').then(() => {
+            setInitialized(true)
+        })
+    }, [])
+
+    useEffect(() => {
+        if (!initialized || !ref.current) return
+        Object.assign(ref.current, { chatflowid, apiHost, chatflowConfig, theme })
+    }, [initialized, chatflowid, apiHost, chatflowConfig, theme])
+
+    return <flowise-fullchatbot ref={ref} style={{ width: '100%', height: '100%' }} />
+}
+
 // ===========================|| CustomAssistantConfigurePreview ||=========================== //
 
 const MemoizedFullPageChat = memo(
     ({ ...props }) => (
         <div>
-            <FullPageChat {...props}></FullPageChat>
+            <FlowiseFullPageChat {...props}></FlowiseFullPageChat>
         </div>
     ),
     (prevProps, nextProps) => prevProps.chatflow === nextProps.chatflow
