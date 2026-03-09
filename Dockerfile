@@ -17,7 +17,8 @@ RUN apk update && \
         cairo-dev \
         pango-dev \
         chromium \
-        curl && \
+        curl \
+        git && \
     npm install -g pnpm
 
 ENV PUPPETEER_SKIP_DOWNLOAD=true
