@@ -106,7 +106,16 @@ const ChatbotFull = () => {
                             chatflowid={chatflow.id}
                             apiHost={baseURL}
                             chatflowConfig={chatbotOverrideConfig}
-                            theme={{ chatWindow: chatbotTheme }}
+                            theme={{
+                                chatWindow: {
+                                    ...chatbotTheme,
+                                    footer: chatbotTheme.footer ?? {
+                                        text: 'Powered by',
+                                        company: 'HorizonAI',
+                                        companyLink: 'https://www.horizonai.ai'
+                                    }
+                                }
+                            }}
                         />
                     )}
                 </>

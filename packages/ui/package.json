@@ -39,7 +39,7 @@
         "clsx": "^1.1.1",
         "dompurify": "^3.2.6",
         "dotenv": "^16.0.0",
-        "flowise-embed": "latest",
+        "flowise-embed": "github:saxoji/FlowiseChatEmbed",
         "flowise-embed-react": "latest",
         "flowise-react-json-view": "*",
         "formik": "^2.2.6",
