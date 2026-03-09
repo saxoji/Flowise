@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { FullPageChat } from 'flowise-embed-react'
+import { useEffect, useRef, useState } from 'react'
 
 // API
 import chatflowsApi from '@/api/chatflows'
@@ -14,6 +13,26 @@ import { alpha } from '@mui/material/styles'
 
 //Const
 import { baseURL } from '@/store/constant'
+
+// ==============================|| FullPageChat Wrapper (uses flowise-embed directly) ||============================== //
+
+const FlowiseFullPageChat = ({ chatflowid, apiHost, chatflowConfig, theme }) => {
+    const ref = useRef(null)
+    const [initialized, setInitialized] = useState(false)
+
+    useEffect(() => {
+        import('flowise-embed/dist/web.js').then(() => {
+            setInitialized(true)
+        })
+    }, [])
+
+    useEffect(() => {
+        if (!initialized || !ref.current) return
+        Object.assign(ref.current, { chatflowid, apiHost, chatflowConfig, theme })
+    }, [initialized, chatflowid, apiHost, chatflowConfig, theme])
+
+    return <flowise-fullchatbot ref={ref} style={{ width: '100%', height: '100%' }} />
+}
 
 // ==============================|| Chatbot ||============================== //
 
@@ -102,7 +121,7 @@ const ChatbotFull = () => {
                             </Box>
                         </Box>
                     ) : (
-                        <FullPageChat
+                        <FlowiseFullPageChat
                             chatflowid={chatflow.id}
                             apiHost={baseURL}
                             chatflowConfig={chatbotOverrideConfig}
