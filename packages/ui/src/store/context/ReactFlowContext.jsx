@@ -155,7 +155,8 @@ export const ReactFlowContext = ({ children }) => {
 
                         if (inputAnchor && inputAnchor.list) {
                             const values = node.data.inputs[targetInput] || []
-                            value = values.filter((item) => !item.includes(sourceNodeId))
+                            const exactRef = `{{${sourceNodeId}.data.instance}}`
+                            value = values.filter((item) => item !== exactRef)
                         } else if (inputParam && inputParam.acceptVariable) {
                             value = node.data.inputs[targetInput].replace(`{{${sourceNodeId}.data.instance}}`, '') || ''
                         } else {
