@@ -42,16 +42,107 @@ export class SecureZodSchemaParser {
     }
 
     private static cleanSchemaString(schema: string): string {
-        // Remove single-line comments
-        schema = schema.replace(/\/\/.*$/gm, '')
+        return this.normalizeWhitespace(this.removeComments(schema)).trim()
+    }
 
-        // Remove multi-line comments
-        schema = schema.replace(/\/\*[\s\S]*?\*\//g, '')
+    private static removeComments(schema: string): string {
+        let cleaned = ''
+        let inString = false
+        let stringChar = ''
+        let escaped = false
 
-        // Normalize whitespace
-        schema = schema.replace(/\s+/g, ' ').trim()
+        for (let i = 0; i < schema.length; i++) {
+            const char = schema[i]
+            const nextChar = schema[i + 1]
 
-        return schema
+            if (inString) {
+                cleaned += char
+                if (escaped) {
+                    escaped = false
+                } else if (char === '\\') {
+                    escaped = true
+                } else if (char === stringChar) {
+                    inString = false
+                    stringChar = ''
+                }
+                continue
+            }
+
+            if (char === '"' || char === "'") {
+                inString = true
+                stringChar = char
+                cleaned += char
+                continue
+            }
+
+            if (char === '/' && nextChar === '/') {
+                while (i < schema.length && schema[i] !== '\n') {
+                    i++
+                }
+                cleaned += ' '
+                continue
+            }
+
+            if (char === '/' && nextChar === '*') {
+                i += 2
+                while (i < schema.length && !(schema[i] === '*' && schema[i + 1] === '/')) {
+                    i++
+                }
+                if (i < schema.length) i++
+                cleaned += ' '
+                continue
+            }
+
+            cleaned += char
+        }
+
+        return cleaned
+    }
+
+    private static normalizeWhitespace(schema: string): string {
+        let normalized = ''
+        let inString = false
+        let stringChar = ''
+        let escaped = false
+        let previousWasWhitespace = false
+
+        for (let i = 0; i < schema.length; i++) {
+            const char = schema[i]
+
+            if (inString) {
+                normalized += char
+                if (escaped) {
+                    escaped = false
+                } else if (char === '\\') {
+                    escaped = true
+                } else if (char === stringChar) {
+                    inString = false
+                    stringChar = ''
+                }
+                continue
+            }
+
+            if (char === '"' || char === "'") {
+                inString = true
+                stringChar = char
+                previousWasWhitespace = false
+                normalized += char
+                continue
+            }
+
+            if (/\s/.test(char)) {
+                if (!previousWasWhitespace) {
+                    normalized += ' '
+                    previousWasWhitespace = true
+                }
+                continue
+            }
+
+            previousWasWhitespace = false
+            normalized += char
+        }
+
+        return normalized
     }
 
     private static parseSchemaStructure(schema: string): any {
@@ -189,7 +280,7 @@ export class SecureZodSchemaParser {
         const type: { base: string; modifiers: any[]; baseArgs?: any[] } = { base: '', modifiers: [] }
 
         // Handle chained methods like z.string().max(500).optional()
-        const parts = typeStr.split('.')
+        const parts = this.splitZodChain(typeStr)
 
         for (let i = 0; i < parts.length; i++) {
             const part = parts[i].trim()
@@ -230,6 +321,57 @@ export class SecureZodSchemaParser {
         }
 
         return type
+    }
+
+    private static splitZodChain(typeStr: string): string[] {
+        const parts: string[] = []
+        let current = ''
+        let depth = 0
+        let inString = false
+        let stringChar = ''
+        let escaped = false
+
+        for (let i = 0; i < typeStr.length; i++) {
+            const char = typeStr[i]
+
+            if (inString) {
+                current += char
+                if (escaped) {
+                    escaped = false
+                } else if (char === '\\') {
+                    escaped = true
+                } else if (char === stringChar) {
+                    inString = false
+                    stringChar = ''
+                }
+                continue
+            }
+
+            if (char === '"' || char === "'") {
+                inString = true
+                stringChar = char
+                current += char
+                continue
+            }
+
+            if (char === '(' || char === '[' || char === '{') {
+                depth++
+            } else if (char === ')' || char === ']' || char === '}') {
+                depth--
+            } else if (char === '.' && depth === 0) {
+                parts.push(current)
+                current = ''
+                continue
+            }
+
+            current += char
+        }
+
+        if (current) {
+            parts.push(current)
+        }
+
+        return parts
     }
 
     private static parseArray(typeStr: string): any {
@@ -313,18 +455,81 @@ export class SecureZodSchemaParser {
         } else if (inner.match(/^\d+$/)) {
             // Number argument
             return [parseInt(inner, 10)]
-        } else if (inner.startsWith('"') && inner.endsWith('"')) {
+        } else if (this.isQuotedString(inner)) {
             // String argument
-            return [inner.slice(1, -1)]
+            return [this.unquoteString(inner)]
         } else {
             // Try to parse as comma-separated values
-            return inner.split(',').map((arg) => {
+            return this.splitArguments(inner).map((arg) => {
                 arg = arg.trim()
                 if (arg.match(/^\d+$/)) return parseInt(arg, 10)
-                if (arg.startsWith('"') && arg.endsWith('"')) return arg.slice(1, -1)
+                if (this.isQuotedString(arg)) return this.unquoteString(arg)
                 return arg
             })
         }
+    }
+
+    private static splitArguments(content: string): string[] {
+        const args: string[] = []
+        let current = ''
+        let depth = 0
+        let inString = false
+        let stringChar = ''
+        let escaped = false
+
+        for (let i = 0; i < content.length; i++) {
+            const char = content[i]
+
+            if (inString) {
+                current += char
+                if (escaped) {
+                    escaped = false
+                } else if (char === '\\') {
+                    escaped = true
+                } else if (char === stringChar) {
+                    inString = false
+                    stringChar = ''
+                }
+                continue
+            }
+
+            if (char === '"' || char === "'") {
+                inString = true
+                stringChar = char
+                current += char
+                continue
+            }
+
+            if (char === '(' || char === '[' || char === '{') {
+                depth++
+            } else if (char === ')' || char === ']' || char === '}') {
+                depth--
+            } else if (char === ',' && depth === 0) {
+                args.push(current.trim())
+                current = ''
+                continue
+            }
+
+            current += char
+        }
+
+        if (current.trim()) {
+            args.push(current.trim())
+        }
+
+        return args
+    }
+
+    private static isQuotedString(value: string): boolean {
+        return (
+            value.length >= 2 &&
+            ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) &&
+            value[value.length - 2] !== '\\'
+        )
+    }
+
+    private static unquoteString(value: string): string {
+        return value.slice(1, -1)
     }
 
     private static parseArrayContent(content: string): string[] {
