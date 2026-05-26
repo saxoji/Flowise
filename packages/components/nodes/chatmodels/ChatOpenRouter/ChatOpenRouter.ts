@@ -143,16 +143,20 @@ class ChatOpenRouter_ChatModels implements INode {
         const baseOptions = nodeData.inputs?.baseOptions
         const cache = nodeData.inputs?.cache as BaseCache
         const allowImageUploads = nodeData.inputs?.allowImageUploads as boolean
+        const roundRobinSessionId = (options?.sessionId as string) || (options?.chatId as string)
+        const roundRobinScope = [((options?.chatflowid as string) || (options?.chatflowId as string)), nodeData.id].filter(Boolean).join(':')
 
         const credentialData = await getCredentialData(nodeData.credential ?? '', options)
         const openRouterApiKey = getCredentialParam('openRouterApiKey', credentialData, nodeData)
 
-        const obj: ChatOpenAIFields = {
+        const obj: ChatOpenAIFields & { roundRobinScope?: string; roundRobinSessionId?: string } = {
             temperature: parseFloat(temperature),
             modelName,
             openAIApiKey: openRouterApiKey,
             apiKey: openRouterApiKey,
-            streaming: streaming ?? true
+            streaming: streaming ?? true,
+            roundRobinScope: roundRobinScope || nodeData.id,
+            roundRobinSessionId
         }
 
         if (maxTokens) obj.maxTokens = parseInt(maxTokens, 10)

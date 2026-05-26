@@ -7,14 +7,33 @@ import { IMultiModalOption, IVisionChatModal } from '../../../src'
 type OpenRouterFields = ChatOpenAIFields & {
     model?: string
     openAIApiKey?: unknown
+    roundRobinScope?: string
+    roundRobinSessionId?: string
 }
 
 type OpenRouterAttempt = {
     modelName: string
     apiKey?: unknown
+    apiKeyIndex: number
 }
 
 type AttemptChatModel = Pick<LangchainChatOpenAI, '_generate' | '_streamResponseChunks'>
+
+type RoundRobinState = {
+    nextIndex: number
+    lastUsedAt: number
+}
+
+type SessionAttemptState = {
+    attemptIndex: number
+    lastUsedAt: number
+}
+
+const ROUND_ROBIN_STATE_TTL_MS = 24 * 60 * 60 * 1000
+const ROUND_ROBIN_STATE_PRUNE_INTERVAL_MS = 60 * 60 * 1000
+const roundRobinAssignmentStates = new Map<string, RoundRobinState>()
+const roundRobinSessionStates = new Map<string, SessionAttemptState>()
+let lastRoundRobinStatePrune = 0
 
 const splitCommaSeparatedValues = (value: unknown): string[] => {
     if (typeof value !== 'string') return []
@@ -63,18 +82,22 @@ const getFieldsForAttempt = (fields: OpenRouterFields | undefined, modelName: st
 }
 
 const createNormalizedFields = (fields?: OpenRouterFields) => {
-    const modelCandidates = splitCommaSeparatedValues(getConfiguredModelName(fields))
-    const cacheModelName = modelCandidates[0] ?? getConfiguredModelName(fields)
-    const configuredApiKey = getConfiguredApiKey(fields)
+    const { roundRobinScope, roundRobinSessionId, ...chatFields } = fields ?? {}
+    const sourceFields = chatFields as OpenRouterFields
+    const modelCandidates = splitCommaSeparatedValues(getConfiguredModelName(sourceFields))
+    const cacheModelName = modelCandidates[0] ?? getConfiguredModelName(sourceFields)
+    const configuredApiKey = getConfiguredApiKey(sourceFields)
     const apiKeyCandidates = splitCommaSeparatedValues(configuredApiKey)
     const firstApiKey = apiKeyCandidates[0] ?? configuredApiKey
 
     return {
-        fields: getFieldsForAttempt(fields, cacheModelName, firstApiKey),
+        fields: getFieldsForAttempt(sourceFields, cacheModelName, firstApiKey),
         modelCandidates: modelCandidates.length ? modelCandidates : cacheModelName ? [cacheModelName] : [],
         apiKeyCandidates,
         configuredApiKey,
-        cacheModelName
+        cacheModelName,
+        roundRobinScope,
+        roundRobinSessionId
     }
 }
 
@@ -88,9 +111,11 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
     private readonly apiKeyCandidates: string[]
     private readonly configuredApiKey: unknown
     private readonly cacheModelName: string
+    private readonly roundRobinScope?: string
+    private readonly roundRobinSessionId?: string
 
-    constructor(id: string, fields?: ChatOpenAIFields) {
-        const normalized = createNormalizedFields(fields as OpenRouterFields | undefined)
+    constructor(id: string, fields?: OpenRouterFields) {
+        const normalized = createNormalizedFields(fields)
         super(normalized.fields)
         this.id = id
         this.baseFields = normalized.fields
@@ -98,6 +123,8 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
         this.apiKeyCandidates = normalized.apiKeyCandidates
         this.configuredApiKey = normalized.configuredApiKey
         this.cacheModelName = normalized.cacheModelName
+        this.roundRobinScope = normalized.roundRobinScope
+        this.roundRobinSessionId = normalized.roundRobinSessionId
         this.configuredModel = this.cacheModelName
         this.configuredMaxToken = fields?.maxTokens
     }
@@ -132,8 +159,17 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
         if (attempts.length === 1) return super._generate(messages, options, runManager)
 
         let lastError: unknown
+        const attemptedAttemptIndexes = new Set<number>()
+        const failedApiKeyIndexes = new Set<number>()
+        const failedModelNames = new Set<string>()
 
-        for (const attempt of attempts) {
+        while (attemptedAttemptIndexes.size < attempts.length) {
+            const nextAttempt = this.getNextAttempt(attempts, attemptedAttemptIndexes, failedApiKeyIndexes, failedModelNames)
+            if (!nextAttempt) break
+
+            const { attempt, index } = nextAttempt
+            attemptedAttemptIndexes.add(index)
+
             try {
                 const result = await this.createAttemptModel(attempt, attempts.length > 1)._generate(messages, options, runManager)
                 this.annotateResultWithSelectedModel(result, attempt.modelName)
@@ -141,6 +177,7 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
             } catch (error) {
                 if (this.isAbortError(error, options)) throw error
                 lastError = error
+                this.trackFailedAttempt(attempt, failedApiKeyIndexes, failedModelNames)
             }
         }
 
@@ -159,8 +196,17 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
         }
 
         let lastError: unknown
+        const attemptedAttemptIndexes = new Set<number>()
+        const failedApiKeyIndexes = new Set<number>()
+        const failedModelNames = new Set<string>()
 
-        for (const attempt of attempts) {
+        while (attemptedAttemptIndexes.size < attempts.length) {
+            const nextAttempt = this.getNextAttempt(attempts, attemptedAttemptIndexes, failedApiKeyIndexes, failedModelNames)
+            if (!nextAttempt) break
+
+            const { attempt, index } = nextAttempt
+            attemptedAttemptIndexes.add(index)
+
             let hasYieldedChunk = false
 
             try {
@@ -176,6 +222,7 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
             } catch (error) {
                 if (hasYieldedChunk || this.isAbortError(error, options)) throw error
                 lastError = error
+                this.trackFailedAttempt(attempt, failedApiKeyIndexes, failedModelNames)
             }
         }
 
@@ -191,29 +238,127 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
         return model
     }
 
-    protected shuffleAttempts<T>(attempts: T[]): T[] {
-        const shuffled = [...attempts]
+    private getAttemptSequence(): OpenRouterAttempt[] {
+        const attempts = this.getAllAttempts()
+        if (attempts.length <= 1) return attempts
 
-        for (let index = shuffled.length - 1; index > 0; index -= 1) {
-            const randomIndex = Math.floor(Math.random() * (index + 1))
-            ;[shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]]
+        const assignmentKey = this.getRoundRobinAssignmentStateKey(attempts)
+        const sessionKey = this.getRoundRobinSessionStateKey(assignmentKey)
+        this.pruneRoundRobinStates()
+
+        const now = Date.now()
+        const sessionState = roundRobinSessionStates.get(sessionKey)
+        let startIndex = sessionState ? this.normalizeAttemptIndex(sessionState.attemptIndex, attempts.length) : undefined
+
+        if (startIndex === undefined) {
+            const assignmentState = roundRobinAssignmentStates.get(assignmentKey)
+            startIndex = assignmentState ? this.normalizeAttemptIndex(assignmentState.nextIndex, attempts.length) : 0
+
+            roundRobinAssignmentStates.set(assignmentKey, {
+                nextIndex: this.normalizeAttemptIndex(startIndex + 1, attempts.length),
+                lastUsedAt: now
+            })
         }
 
-        return shuffled
+        roundRobinSessionStates.set(sessionKey, {
+            attemptIndex: startIndex,
+            lastUsedAt: now
+        })
+
+        return [...attempts.slice(startIndex), ...attempts.slice(0, startIndex)]
     }
 
-    private getAttemptSequence(): OpenRouterAttempt[] {
+    private getAllAttempts(): OpenRouterAttempt[] {
         const models = this.modelCandidates.length ? this.modelCandidates : this.cacheModelName ? [this.cacheModelName] : []
         const apiKeys = this.apiKeyCandidates.length ? this.apiKeyCandidates : [this.configuredApiKey]
         const attempts: OpenRouterAttempt[] = []
 
         for (const modelName of models) {
-            for (const apiKey of apiKeys) {
-                attempts.push({ modelName, apiKey })
+            apiKeys.forEach((apiKey, apiKeyIndex) => {
+                attempts.push({ modelName, apiKey, apiKeyIndex })
+            })
+        }
+
+        return attempts.length ? attempts : [{ modelName: this.cacheModelName, apiKey: this.configuredApiKey, apiKeyIndex: 0 }]
+    }
+
+    private getRoundRobinAssignmentStateKey(attempts: OpenRouterAttempt[]): string {
+        const models = this.modelCandidates.length ? this.modelCandidates : this.cacheModelName ? [this.cacheModelName] : []
+        const apiKeys = this.apiKeyCandidates.length ? this.apiKeyCandidates : [this.configuredApiKey]
+        return [this.roundRobinScope || this.id, models.join(','), `keys:${apiKeys.length}`, `attempts:${attempts.length}`].join('|')
+    }
+
+    private getRoundRobinSessionStateKey(assignmentKey: string): string {
+        return `${assignmentKey}|session:${this.roundRobinSessionId || 'default'}`
+    }
+
+    private normalizeAttemptIndex(index: number, attemptsLength: number): number {
+        if (attemptsLength <= 0) return 0
+        return ((index % attemptsLength) + attemptsLength) % attemptsLength
+    }
+
+    private pruneRoundRobinStates(): void {
+        const now = Date.now()
+        if (now - lastRoundRobinStatePrune < ROUND_ROBIN_STATE_PRUNE_INTERVAL_MS) return
+
+        lastRoundRobinStatePrune = now
+
+        for (const [key, state] of roundRobinAssignmentStates) {
+            if (now - state.lastUsedAt > ROUND_ROBIN_STATE_TTL_MS) roundRobinAssignmentStates.delete(key)
+        }
+
+        for (const [key, state] of roundRobinSessionStates) {
+            if (now - state.lastUsedAt > ROUND_ROBIN_STATE_TTL_MS) roundRobinSessionStates.delete(key)
+        }
+    }
+
+    private getNextAttempt(
+        attempts: OpenRouterAttempt[],
+        attemptedAttemptIndexes: Set<number>,
+        failedApiKeyIndexes: Set<number>,
+        failedModelNames: Set<string>
+    ): { attempt: OpenRouterAttempt; index: number } | undefined {
+        const hasMultipleModels = this.modelCandidates.length > 1
+        const hasMultipleApiKeys = this.apiKeyCandidates.length > 1
+        const predicates: Array<(attempt: OpenRouterAttempt) => boolean> = []
+
+        if (hasMultipleModels || hasMultipleApiKeys) {
+            predicates.push(
+                (attempt) =>
+                    (!hasMultipleModels || !failedModelNames.has(attempt.modelName)) &&
+                    (!hasMultipleApiKeys || !failedApiKeyIndexes.has(attempt.apiKeyIndex))
+            )
+        }
+
+        if (hasMultipleApiKeys) {
+            predicates.push((attempt) => !failedApiKeyIndexes.has(attempt.apiKeyIndex))
+        }
+
+        if (hasMultipleModels) {
+            predicates.push((attempt) => !failedModelNames.has(attempt.modelName))
+        }
+
+        predicates.push(() => true)
+
+        for (const predicate of predicates) {
+            for (let index = 0; index < attempts.length; index += 1) {
+                if (attemptedAttemptIndexes.has(index)) continue
+
+                const attempt = attempts[index]
+                if (predicate(attempt)) return { attempt, index }
             }
         }
 
-        return this.shuffleAttempts(attempts.length ? attempts : [{ modelName: this.cacheModelName, apiKey: this.configuredApiKey }])
+        return undefined
+    }
+
+    private trackFailedAttempt(
+        attempt: OpenRouterAttempt,
+        failedApiKeyIndexes: Set<number>,
+        failedModelNames: Set<string>
+    ): void {
+        if (this.apiKeyCandidates.length > 1) failedApiKeyIndexes.add(attempt.apiKeyIndex)
+        if (this.modelCandidates.length > 1) failedModelNames.add(attempt.modelName)
     }
 
     private annotateResultWithSelectedModel(result: ChatResult, modelName: string): void {
