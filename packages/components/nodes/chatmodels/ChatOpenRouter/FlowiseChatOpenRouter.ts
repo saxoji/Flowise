@@ -81,6 +81,15 @@ const getFieldsForAttempt = (fields: OpenRouterFields | undefined, modelName: st
     return nextFields
 }
 
+const cloneOpenRouterFields = (fields?: OpenRouterFields): OpenRouterFields | undefined => {
+    if (!fields) return undefined
+
+    return {
+        ...fields,
+        configuration: fields.configuration ? { ...fields.configuration } : undefined
+    }
+}
+
 const createNormalizedFields = (fields?: OpenRouterFields) => {
     const { roundRobinScope, roundRobinSessionId, ...chatFields } = fields ?? {}
     const sourceFields = chatFields as OpenRouterFields
@@ -106,6 +115,7 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
     configuredMaxToken?: number
     multiModalOption: IMultiModalOption
     id: string
+    private readonly originalFields?: OpenRouterFields
     private readonly baseFields: OpenRouterFields
     private readonly modelCandidates: string[]
     private readonly apiKeyCandidates: string[]
@@ -115,9 +125,11 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
     private readonly roundRobinSessionId?: string
 
     constructor(id: string, fields?: OpenRouterFields) {
+        const originalFieldsSnapshot = cloneOpenRouterFields(fields)
         const normalized = createNormalizedFields(fields)
         super(normalized.fields)
         this.id = id
+        this.originalFields = originalFieldsSnapshot
         this.baseFields = normalized.fields
         this.modelCandidates = normalized.modelCandidates
         this.apiKeyCandidates = normalized.apiKeyCandidates
@@ -131,6 +143,18 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
 
     setMultiModalOption(multiModalOption: IMultiModalOption): void {
         this.multiModalOption = multiModalOption
+    }
+
+    withConfig(config: Parameters<LangchainChatOpenAI['withConfig']>[0]): ReturnType<LangchainChatOpenAI['withConfig']> {
+        const model = new ChatOpenRouter(this.id, this.originalFields)
+        ;(model as any).defaultOptions = {
+            ...((this as any).defaultOptions ?? {}),
+            ...(config ?? {})
+        }
+
+        if (this.multiModalOption) model.setMultiModalOption(this.multiModalOption)
+
+        return model as ReturnType<LangchainChatOpenAI['withConfig']>
     }
 
     _identifyingParams(): ReturnType<LangchainChatOpenAI['_identifyingParams']> {
@@ -320,7 +344,7 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
     ): { attempt: OpenRouterAttempt; index: number } | undefined {
         const hasMultipleModels = this.modelCandidates.length > 1
         const hasMultipleApiKeys = this.apiKeyCandidates.length > 1
-        const predicates: Array<(attempt: OpenRouterAttempt) => boolean> = []
+        const predicates: Array<(_attempt: OpenRouterAttempt) => boolean> = []
 
         if (hasMultipleModels || hasMultipleApiKeys) {
             predicates.push(
@@ -352,11 +376,7 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
         return undefined
     }
 
-    private trackFailedAttempt(
-        attempt: OpenRouterAttempt,
-        failedApiKeyIndexes: Set<number>,
-        failedModelNames: Set<string>
-    ): void {
+    private trackFailedAttempt(attempt: OpenRouterAttempt, failedApiKeyIndexes: Set<number>, failedModelNames: Set<string>): void {
         if (this.apiKeyCandidates.length > 1) failedApiKeyIndexes.add(attempt.apiKeyIndex)
         if (this.modelCandidates.length > 1) failedModelNames.add(attempt.modelName)
     }
