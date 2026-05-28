@@ -57,7 +57,8 @@ import {
     getMemorySessionId,
     getEndingNodes,
     constructGraphs,
-    getAPIOverrideConfig
+    getAPIOverrideConfig,
+    syncNodeInputsWithEdges
 } from '../utils'
 import { validateFileMimeTypeAndExtensionMatch } from './fileValidation'
 import { validateFlowAPIKey } from './validateKey'
@@ -508,8 +509,8 @@ export const executeFlow = async ({
     /*** Get chatflows and prepare data  ***/
     const flowData = chatflow.flowData
     const parsedFlowData: IReactFlowObject = JSON.parse(flowData)
-    const nodes = parsedFlowData.nodes
-    const edges = parsedFlowData.edges
+    const edges = parsedFlowData.edges || []
+    const nodes = syncNodeInputsWithEdges(parsedFlowData.nodes || [], edges)
 
     const apiMessageId = uuidv4()
 

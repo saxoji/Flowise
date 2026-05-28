@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useContext } from 'react'
-import ReactFlow, { addEdge, Controls, Background, useNodesState, useEdgesState } from 'reactflow'
+import ReactFlow, { addEdge, applyEdgeChanges, Controls, Background, useNodesState, useEdgesState } from 'reactflow'
 import 'reactflow/dist/style.css'
 
 import { useDispatch, useSelector } from 'react-redux'
@@ -50,7 +50,8 @@ import {
     rearrangeToolsOrdering,
     getUpsertDetails,
     updateOutdatedNodeData,
-    updateOutdatedNodeEdge
+    updateOutdatedNodeEdge,
+    syncNodeInputsWithEdges
 } from '@/utils/genericHelper'
 import useNotifier from '@/utils/useNotifier'
 import { usePrompt } from '@/utils/usePrompt'
@@ -95,7 +96,7 @@ const Canvas = () => {
     // ==============================|| ReactFlow ||============================== //
 
     const [nodes, setNodes, onNodesChange] = useNodesState()
-    const [edges, setEdges, onEdgesChange] = useEdgesState()
+    const [edges, setEdges] = useEdgesState()
 
     const [selectedNode, setSelectedNode] = useState(null)
     const [isUpsertButtonEnabled, setIsUpsertButtonEnabled] = useState(false)
@@ -142,10 +143,11 @@ const Canvas = () => {
                     const inputParam = node.data.inputParams.find((param) => param.name === targetInput)
 
                     if (inputAnchor && inputAnchor.list) {
-                        const newValues = node.data.inputs[targetInput] || []
+                        const currentValues = node.data.inputs[targetInput]
+                        const newValues = Array.isArray(currentValues) ? [...currentValues] : []
                         if (targetInput === 'tools') {
                             rearrangeToolsOrdering(newValues, sourceNodeId)
-                        } else {
+                        } else if (!newValues.includes(`{{${sourceNodeId}.data.instance}}`)) {
                             newValues.push(`{{${sourceNodeId}.data.instance}}`)
                         }
                         value = newValues
@@ -154,11 +156,14 @@ const Canvas = () => {
                     } else {
                         value = `{{${sourceNodeId}.data.instance}}`
                     }
-                    node.data = {
-                        ...node.data,
-                        inputs: {
-                            ...node.data.inputs,
-                            [targetInput]: value
+                    return {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            inputs: {
+                                ...node.data.inputs,
+                                [targetInput]: value
+                            }
                         }
                     }
                 }
@@ -172,10 +177,11 @@ const Canvas = () => {
     const handleLoadFlow = (file) => {
         try {
             const flowData = JSON.parse(file)
-            const nodes = flowData.nodes || []
+            const flowEdges = flowData.edges || []
+            const flowNodes = syncNodeInputsWithEdges(flowData.nodes || [], flowEdges)
 
-            setNodes(nodes)
-            setEdges(flowData.edges || [])
+            setNodes(flowNodes)
+            setEdges(flowEdges)
             setTimeout(() => setDirty(), 0)
         } catch (e) {
             console.error(e)
@@ -216,20 +222,23 @@ const Canvas = () => {
 
     const handleSaveFlow = async (chatflowName) => {
         if (reactFlowInstance) {
-            const nodes = reactFlowInstance.getNodes().map((node) => {
+            const rfInstanceObject = reactFlowInstance.toObject()
+            const syncedNodes = syncNodeInputsWithEdges(reactFlowInstance.getNodes(), rfInstanceObject.edges || [])
+            const nodes = syncedNodes.map((node) => {
                 const nodeData = cloneDeep(node.data)
                 if (Object.prototype.hasOwnProperty.call(nodeData.inputs, FLOWISE_CREDENTIAL_ID)) {
                     nodeData.credential = nodeData.inputs[FLOWISE_CREDENTIAL_ID]
                     nodeData.inputs = omit(nodeData.inputs, [FLOWISE_CREDENTIAL_ID])
                 }
-                node.data = {
-                    ...nodeData,
-                    selected: false
+                return {
+                    ...node,
+                    data: {
+                        ...nodeData,
+                        selected: false
+                    }
                 }
-                return node
             })
 
-            const rfInstanceObject = reactFlowInstance.toObject()
             rfInstanceObject.nodes = nodes
             const flowData = JSON.stringify(rfInstanceObject)
 
@@ -364,8 +373,9 @@ const Canvas = () => {
             }
         }
 
-        setNodes(cloneNodes)
-        setEdges(cloneEdges.filter((edge) => !toBeRemovedEdges.includes(edge)))
+        const nextEdges = cloneEdges.filter((edge) => !toBeRemovedEdges.includes(edge))
+        setNodes(syncNodeInputsWithEdges(cloneNodes, nextEdges))
+        setEdges(nextEdges)
         setDirty()
         setIsSyncNodesButtonEnabled(false)
     }
@@ -406,6 +416,21 @@ const Canvas = () => {
         dispatch({ type: SET_DIRTY })
     }
 
+    const handleEdgesChange = useCallback(
+        (changes) => {
+            setEdges((eds) => {
+                const nextEdges = applyEdgeChanges(changes, eds)
+                if (changes.some((change) => change.type === 'remove')) {
+                    setNodes((nds) => syncNodeInputsWithEdges(nds, nextEdges))
+                    setDirty()
+                }
+                return nextEdges
+            })
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [setEdges, setNodes]
+    )
+
     const checkIfUpsertAvailable = (nodes, edges) => {
         const upsertNodeDetails = getUpsertDetails(nodes, edges)
         if (upsertNodeDetails.length) setIsUpsertButtonEnabled(true)
@@ -439,10 +464,20 @@ const Canvas = () => {
                 return
             }
             const initialFlow = chatflow.flowData ? JSON.parse(chatflow.flowData) : []
+            const initialEdges = initialFlow.edges || []
+            const initialNodes = syncNodeInputsWithEdges(initialFlow.nodes || [], initialEdges)
+            const normalizedChatflow = {
+                ...chatflow,
+                flowData: JSON.stringify({
+                    ...initialFlow,
+                    nodes: initialNodes,
+                    edges: initialEdges
+                })
+            }
             setLasUpdatedDateTime(chatflow.updatedDate)
-            setNodes(initialFlow.nodes || [])
-            setEdges(initialFlow.edges || [])
-            dispatch({ type: SET_CHATFLOW, chatflow })
+            setNodes(initialNodes)
+            setEdges(initialEdges)
+            dispatch({ type: SET_CHATFLOW, chatflow: normalizedChatflow })
         } else if (getSpecificChatflowApi.error) {
             errorFailed(`Failed to retrieve ${canvasTitle}: ${getSpecificChatflowApi.error.response.data.message}`)
         }
@@ -613,7 +648,7 @@ const Canvas = () => {
                                 onNodesChange={onNodesChange}
                                 onNodeClick={onNodeClick}
                                 onNodeDoubleClick={onNodeDoubleClick}
-                                onEdgesChange={onEdgesChange}
+                                onEdgesChange={handleEdgesChange}
                                 onDrop={onDrop}
                                 onDragOver={onDragOver}
                                 onNodeDragStop={setDirty}

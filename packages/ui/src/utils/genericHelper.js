@@ -761,10 +761,8 @@ export const getUpsertDetails = (nodes, edges) => {
     return upsertNodes
 }
 
-export const rearrangeToolsOrdering = (newValues, sourceNodeId) => {
+const sortToolInputRefs = (values) => {
     // RequestsGet and RequestsPost have to be in order before other tools
-    newValues.push(`{{${sourceNodeId}.data.instance}}`)
-
     const sortKey = (item) => {
         if (item.includes('requestsGet') || item.includes('readFile')) {
             return 0
@@ -775,7 +773,66 @@ export const rearrangeToolsOrdering = (newValues, sourceNodeId) => {
         }
     }
 
-    newValues.sort((a, b) => sortKey(a) - sortKey(b))
+    return values.sort((a, b) => sortKey(a) - sortKey(b))
+}
+
+export const rearrangeToolsOrdering = (newValues, sourceNodeId) => {
+    const ref = `{{${sourceNodeId}.data.instance}}`
+    const orderedValues = sortToolInputRefs([...new Set([...newValues, ref])])
+    newValues.splice(0, newValues.length, ...orderedValues)
+}
+
+export const syncNodeInputsWithEdges = (nodes = [], edges = []) => {
+    const edgesByTarget = edges.reduce((acc, edge) => {
+        if (!edge?.target) return acc
+        if (!acc[edge.target]) acc[edge.target] = []
+        acc[edge.target].push(edge)
+        return acc
+    }, {})
+
+    return nodes.map((node) => {
+        const inputAnchors = node?.data?.inputAnchors || []
+        if (!inputAnchors.length) return node
+
+        const currentInputs = node.data.inputs || {}
+        const nextInputs = { ...currentInputs }
+        let changed = false
+
+        for (const inputAnchor of inputAnchors) {
+            if (!inputAnchor?.id || !inputAnchor?.name) continue
+
+            const connectedEdges = (edgesByTarget[node.id] || []).filter((edge) => edge.targetHandle === inputAnchor.id)
+
+            if (inputAnchor.list) {
+                const currentValue = nextInputs[inputAnchor.name]
+                if (!connectedEdges.length && !Array.isArray(currentValue) && !String(currentValue || '').startsWith('{{')) continue
+
+                let value = [...new Set(connectedEdges.map((edge) => `{{${edge.source}.data.instance}}`))]
+                if (inputAnchor.name === 'tools') value = sortToolInputRefs(value)
+
+                if (!isEqual(nextInputs[inputAnchor.name], value)) {
+                    nextInputs[inputAnchor.name] = value
+                    changed = true
+                }
+            } else {
+                const value = connectedEdges[0]?.source ? `{{${connectedEdges[0].source}.data.instance}}` : ''
+                if (nextInputs[inputAnchor.name] !== value) {
+                    nextInputs[inputAnchor.name] = value
+                    changed = true
+                }
+            }
+        }
+
+        if (!changed) return node
+
+        return {
+            ...node,
+            data: {
+                ...node.data,
+                inputs: nextInputs
+            }
+        }
+    })
 }
 
 export const throttle = (func, limit) => {

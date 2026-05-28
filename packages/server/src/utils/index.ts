@@ -509,6 +509,73 @@ type BuildFlowParams = {
     checkStorage?: (orgId: string, subscriptionId: string, usageCacheManager: any) => Promise<any>
 }
 
+const sortToolInputRefs = (values: string[]): string[] => {
+    const sortKey = (item: string) => {
+        if (item.includes('requestsGet') || item.includes('readFile')) {
+            return 0
+        } else if (item.includes('requestsPost') || item.includes('writeFile')) {
+            return 1
+        } else {
+            return 2
+        }
+    }
+
+    return values.sort((a, b) => sortKey(a) - sortKey(b))
+}
+
+export const syncNodeInputsWithEdges = (nodes: IReactFlowNode[] = [], edges: IReactFlowEdge[] = []): IReactFlowNode[] => {
+    const edgesByTarget = edges.reduce<Record<string, IReactFlowEdge[]>>((acc, edge) => {
+        if (!edge?.target) return acc
+        if (!acc[edge.target]) acc[edge.target] = []
+        acc[edge.target].push(edge)
+        return acc
+    }, {})
+
+    return nodes.map((node) => {
+        const inputAnchors = node?.data?.inputAnchors || []
+        if (!inputAnchors.length) return node
+
+        const currentInputs = node.data.inputs || {}
+        const nextInputs = { ...currentInputs }
+        let changed = false
+
+        for (const inputAnchor of inputAnchors) {
+            if (!inputAnchor?.id || !inputAnchor?.name) continue
+
+            const connectedEdges = (edgesByTarget[node.id] || []).filter((edge) => edge.targetHandle === inputAnchor.id)
+
+            if (inputAnchor.list) {
+                const currentValue = nextInputs[inputAnchor.name]
+                if (!connectedEdges.length && !Array.isArray(currentValue) && !String(currentValue || '').startsWith('{{')) continue
+
+                let value = [...new Set(connectedEdges.map((edge) => `{{${edge.source}.data.instance}}`))]
+                if (inputAnchor.name === 'tools') value = sortToolInputRefs(value)
+
+                if (!isEqual(nextInputs[inputAnchor.name], value)) {
+                    nextInputs[inputAnchor.name] = value
+                    changed = true
+                }
+            } else {
+                const value = connectedEdges[0]?.source ? `{{${connectedEdges[0].source}.data.instance}}` : ''
+                if (nextInputs[inputAnchor.name] !== value) {
+                    nextInputs[inputAnchor.name] = value
+                    changed = true
+                }
+            }
+        }
+
+        if (!changed) return node
+
+        return {
+            ...node,
+            data: {
+                ...node.data,
+                inputs: nextInputs
+            }
+        }
+    })
+}
+
 /**
  * Build flow from start to end
  * @param {BuildFlowParams} params
@@ -545,7 +612,7 @@ export const buildFlow = async ({
     updateStorageUsage,
     checkStorage
 }: BuildFlowParams) => {
-    const flowNodes = cloneDeep(reactFlowNodes)
+    const flowNodes = syncNodeInputsWithEdges(cloneDeep(reactFlowNodes), reactFlowEdges)
 
     let upsertHistory: Record<string, any> = {}
 
