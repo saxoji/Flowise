@@ -20,7 +20,7 @@ describe('syncNodeInputsWithEdges', () => {
 
         const result = syncNodeInputsWithEdges(nodes, edges)
 
-        expect(result[0].data.inputs.tools).toEqual(['{{customTool_0.data.instance}}', '{{customTool_45.data.instance}}'])
+        expect(result[0]!.data.inputs.tools).toEqual(['{{customTool_0.data.instance}}', '{{customTool_45.data.instance}}'])
     })
 
     it('removes stale tool refs that no longer have edges', () => {
@@ -29,7 +29,7 @@ describe('syncNodeInputsWithEdges', () => {
 
         const result = syncNodeInputsWithEdges(nodes, edges)
 
-        expect(result[0].data.inputs.tools).toEqual(['{{customTool_0.data.instance}}'])
+        expect(result[0]!.data.inputs.tools).toEqual(['{{customTool_0.data.instance}}'])
     })
 
     it('deduplicates duplicate edges to the same list anchor', () => {
@@ -41,7 +41,7 @@ describe('syncNodeInputsWithEdges', () => {
 
         const result = syncNodeInputsWithEdges(nodes, edges)
 
-        expect(result[0].data.inputs.tools).toEqual(['{{customTool_45.data.instance}}'])
+        expect(result[0]!.data.inputs.tools).toEqual(['{{customTool_45.data.instance}}'])
     })
 
     it('syncs single connected input anchors without touching input params', () => {
@@ -60,7 +60,7 @@ describe('syncNodeInputsWithEdges', () => {
 
         const result = syncNodeInputsWithEdges(nodes, edges)
 
-        expect(result[0].data.inputs).toEqual({
+        expect(result[0]!.data.inputs).toEqual({
             model: '{{chatOpenRouter_0.data.instance}}',
             systemMessage: 'keep me'
         })

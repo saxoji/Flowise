@@ -540,9 +540,10 @@ export const syncNodeInputsWithEdges = (nodes: IReactFlowNode[] = [], edges: IRe
         let changed = false
 
         for (const inputAnchor of inputAnchors) {
-            if (!inputAnchor?.id || !inputAnchor?.name) continue
+            if (!inputAnchor?.name) continue
 
-            const connectedEdges = (edgesByTarget[node.id] || []).filter((edge) => edge.targetHandle === inputAnchor.id)
+            const inputAnchorId = (inputAnchor as ICommonObject).id || `${node.id}-input-${inputAnchor.name}-${inputAnchor.type}`
+            const connectedEdges = (edgesByTarget[node.id] || []).filter((edge) => edge.targetHandle === inputAnchorId)
 
             if (inputAnchor.list) {
                 const currentValue = nextInputs[inputAnchor.name]
