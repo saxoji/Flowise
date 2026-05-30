@@ -1,5 +1,7 @@
 import { syncNodeInputsWithEdges } from './index'
 
+const getInputs = (result: ReturnType<typeof syncNodeInputsWithEdges>) => (result[0]!.data as any).inputs
+
 const makeToolAgentNode = (tools: string[]) =>
     ({
         id: 'toolAgent_0',
@@ -8,7 +10,7 @@ const makeToolAgentNode = (tools: string[]) =>
             inputs: { tools },
             inputAnchors: [{ id: 'toolAgent_0-input-tools-Tool', name: 'tools', type: 'Tool', list: true }]
         }
-    }) as any
+    } as any)
 
 describe('syncNodeInputsWithEdges', () => {
     it('rebuilds missing tool input refs from connected edges', () => {
@@ -20,7 +22,7 @@ describe('syncNodeInputsWithEdges', () => {
 
         const result = syncNodeInputsWithEdges(nodes, edges)
 
-        expect(result[0]!.data.inputs!.tools).toEqual(['{{customTool_0.data.instance}}', '{{customTool_45.data.instance}}'])
+        expect(getInputs(result).tools).toEqual(['{{customTool_0.data.instance}}', '{{customTool_45.data.instance}}'])
     })
 
     it('removes stale tool refs that no longer have edges', () => {
@@ -29,7 +31,7 @@ describe('syncNodeInputsWithEdges', () => {
 
         const result = syncNodeInputsWithEdges(nodes, edges)
 
-        expect(result[0]!.data.inputs!.tools).toEqual(['{{customTool_0.data.instance}}'])
+        expect(getInputs(result).tools).toEqual(['{{customTool_0.data.instance}}'])
     })
 
     it('deduplicates duplicate edges to the same list anchor', () => {
@@ -41,7 +43,7 @@ describe('syncNodeInputsWithEdges', () => {
 
         const result = syncNodeInputsWithEdges(nodes, edges)
 
-        expect(result[0]!.data.inputs!.tools).toEqual(['{{customTool_45.data.instance}}'])
+        expect(getInputs(result).tools).toEqual(['{{customTool_45.data.instance}}'])
     })
 
     it('syncs single connected input anchors without touching input params', () => {
@@ -60,7 +62,7 @@ describe('syncNodeInputsWithEdges', () => {
 
         const result = syncNodeInputsWithEdges(nodes, edges)
 
-        expect(result[0]!.data.inputs!).toEqual({
+        expect(getInputs(result)).toEqual({
             model: '{{chatOpenRouter_0.data.instance}}',
             systemMessage: 'keep me'
         })
