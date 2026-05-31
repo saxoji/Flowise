@@ -18,12 +18,12 @@ class ChatVoraRouter_ChatModels extends ChatOpenRouter_ChatModels {
 
     constructor() {
         super()
-        this.label = 'ChatVoraRouter'
+        this.label = 'VoraRouter'
         this.name = 'chatVoraRouter'
         this.type = 'ChatVoraRouter'
-        this.icon = 'openRouter.svg'
+        this.icon = 'voraRouter.png'
         this.category = 'Chat Models'
-        this.description = 'Wrapper around Open Router Inference API'
+        this.description = 'Vora LLM Router Interface API'
         this.baseClasses = [this.type, ...getBaseClasses(LangchainChatOpenAI)]
     }
 }
