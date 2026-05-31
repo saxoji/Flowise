@@ -14,8 +14,16 @@ describe('ChatVoraRouter node', () => {
         expect(voraRouterNode.icon).toBe('voraRouter.png')
         expect(voraRouterNode.baseClasses[0]).toBe('ChatVoraRouter')
         expect(voraRouterNode.baseClasses).toContain('BaseChatModel')
+        expect(voraRouterNode.inputs).toContainEqual(
+            expect.objectContaining({
+                label: 'Image Resolution',
+                name: 'imageResolution',
+                default: 'auto',
+                show: { allowImageUploads: true }
+            })
+        )
         expect(voraRouterNode.credential).toEqual(openRouterNode.credential)
-        expect(voraRouterNode.inputs).toEqual(openRouterNode.inputs)
+        expect(voraRouterNode.inputs.filter((input: { name: string }) => input.name !== 'imageResolution')).toEqual(openRouterNode.inputs)
         expect(voraRouterNode.init).toBe(openRouterNode.init)
     })
 })
