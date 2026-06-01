@@ -208,7 +208,7 @@ const revealCredentialById = async (credentialId: string, workspaceId: string): 
         const plainDataObj: Record<string, any> = { ...decryptedCredentialData }
         for (const key in plainDataObj) {
             const inputParam = inputs.find((inp: any) => inp.name === key)
-            if (inputParam?.type !== 'url') {
+            if (inputParam?.type !== 'password' && inputParam?.type !== 'url') {
                 plainDataObj[key] = REDACTED_CREDENTIAL_VALUE
             }
         }

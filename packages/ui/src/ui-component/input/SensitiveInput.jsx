@@ -16,23 +16,39 @@ export const SensitiveInput = ({ inputParam, value, onChange, disabled = false, 
     const maskedUrlRef = useRef(typeof value === 'string' && value.includes(MASKED_CHARS) ? value : null)
 
     const isUrl = inputParam?.type === 'url'
+    const isPassword = inputParam?.type === 'password'
     const isMultilinePassword = !!inputParam?.rows && inputParam?.type === 'password'
     const isMaskedUrl = isUrl && typeof myValue === 'string' && myValue.includes(MASKED_CHARS)
     const isRedactedMultiline = isMultilinePassword && myValue === REDACTED_CREDENTIAL_VALUE
+    const isHiddenRevealedMultiline = isMultilinePassword && !isVisible && !!onReveal && myValue !== REDACTED_CREDENTIAL_VALUE && myValue !== ''
+    const isRevealable = !!onReveal && (isPassword || isUrl)
 
     const handleToggle = async () => {
+        let shouldToggle = true
         if (!isVisible && onReveal && (myValue === REDACTED_CREDENTIAL_VALUE || isMaskedUrl)) {
             setIsRevealing(true)
-            const revealed = await onReveal()
-            setIsRevealing(false)
-            if (revealed !== undefined) {
-                setMyValue(revealed)
-                onChange(revealed)
+            try {
+                const revealed = await onReveal()
+                if (revealed !== undefined) {
+                    setMyValue(revealed)
+                    onChange(revealed)
+                } else {
+                    shouldToggle = false
+                }
+            } finally {
+                setIsRevealing(false)
             }
-        } else if (isVisible && maskedUrlRef.current) {
+        } else if (isVisible && isUrl && maskedUrlRef.current) {
             setMyValue(maskedUrlRef.current)
         }
+        if (!shouldToggle) return
         setIsVisible((prev) => !prev)
+    }
+
+    const getInputType = () => {
+        if (isUrl) return isVisible || isMaskedUrl ? 'text' : 'password'
+        if (isPassword) return isVisible ? 'text' : 'password'
+        return 'text'
     }
 
     const inputSx = {
@@ -70,11 +86,11 @@ export const SensitiveInput = ({ inputParam, value, onChange, disabled = false, 
                     id={inputParam.name}
                     size='small'
                     disabled={disabled}
-                    type={isUrl ? (isVisible || isMaskedUrl ? 'text' : 'password') : 'password'}
+                    type={getInputType()}
                     placeholder={inputParam.placeholder}
                     multiline={isMultilinePassword}
                     rows={isMultilinePassword ? inputParam.rows ?? 1 : undefined}
-                    value={isRedactedMultiline ? MULTILINE_DOTS : myValue}
+                    value={isRedactedMultiline || isHiddenRevealedMultiline ? MULTILINE_DOTS : myValue}
                     name={inputParam.name}
                     onChange={(e) => {
                         setMyValue(e.target.value)
@@ -93,10 +109,10 @@ export const SensitiveInput = ({ inputParam, value, onChange, disabled = false, 
                         }
                     }}
                     inputProps={{
-                        readOnly: isUrl && isMaskedUrl && !isVisible
+                        readOnly: (isUrl && isMaskedUrl && !isVisible) || isHiddenRevealedMultiline
                     }}
                     endAdornment={
-                        isUrl && onReveal ? (
+                        isRevealable ? (
                             <InputAdornment position='end'>
                                 <IconButton
                                     edge='end'
@@ -119,7 +135,7 @@ export const SensitiveInput = ({ inputParam, value, onChange, disabled = false, 
                     sx={inputSx}
                 />
             </FormControl>
-            {isUrl && onReveal && (
+            {isRevealable && (
                 <Typography variant='caption' sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
                     Click the eye icon to reveal the value before editing.
                 </Typography>
