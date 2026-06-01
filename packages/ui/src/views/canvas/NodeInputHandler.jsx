@@ -75,6 +75,7 @@ import ConditionDialog from '@/ui-component/dialog/ConditionDialog'
 import PromptLangsmithHubDialog from '@/ui-component/dialog/PromptLangsmithHubDialog'
 import ManageScrapedLinksDialog from '@/ui-component/dialog/ManageScrapedLinksDialog'
 import CredentialInputHandler from './CredentialInputHandler'
+import NamedCredentialInputHandler from './NamedCredentialInputHandler'
 import InputHintDialog from '@/ui-component/dialog/InputHintDialog'
 import NvidiaNIMDialog from '@/ui-component/dialog/NvidiaNIMDialog'
 import PromptGeneratorDialog from '@/ui-component/dialog/PromptGeneratorDialog'
@@ -1371,7 +1372,16 @@ const NodeInputHandler = ({
                                 />
                             </div>
                         )}
-                        {(inputParam.type === 'asyncOptions' || inputParam.type === 'asyncMultiOptions') && (
+                        {inputParam.type === 'asyncOptions' && inputParam.credentialNames?.length > 0 && (
+                            <NamedCredentialInputHandler
+                                disabled={disabled}
+                                data={data}
+                                inputParam={inputParam}
+                                onSelect={(newValue) => handleDataChange({ inputParam, newValue })}
+                            />
+                        )}
+                        {(inputParam.type === 'asyncOptions' || inputParam.type === 'asyncMultiOptions') &&
+                            !inputParam.credentialNames?.length && (
                             <>
                                 {data.inputParams.length === 1 && <div style={{ marginTop: 10 }} />}
                                 <div

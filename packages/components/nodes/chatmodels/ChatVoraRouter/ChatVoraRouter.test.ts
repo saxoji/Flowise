@@ -1,3 +1,7 @@
+jest.mock('../../../src/utils', () => ({
+    getBaseClasses: jest.fn(() => ['BaseChatModel'])
+}))
+
 const { nodeClass: ChatOpenRouter_ChatModels } = require('../ChatOpenRouter/ChatOpenRouter')
 const { nodeClass: ChatVoraRouter_ChatModels } = require('./ChatVoraRouter')
 
