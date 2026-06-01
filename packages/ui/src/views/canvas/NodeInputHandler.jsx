@@ -1382,49 +1382,49 @@ const NodeInputHandler = ({
                         )}
                         {(inputParam.type === 'asyncOptions' || inputParam.type === 'asyncMultiOptions') &&
                             !inputParam.credentialNames?.length && (
-                            <>
-                                {data.inputParams.length === 1 && <div style={{ marginTop: 10 }} />}
-                                <div
-                                    key={`${reloadTimestamp}_${data.id}_${JSON.stringify(data.inputs[inputParam.name])}`}
-                                    style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}
-                                >
-                                    <AsyncDropdown
-                                        disabled={disabled}
-                                        name={inputParam.name}
-                                        nodeData={data}
-                                        value={data.inputs[inputParam.name] ?? inputParam.default ?? 'choose an option'}
-                                        freeSolo={inputParam.freeSolo}
-                                        multiple={inputParam.type === 'asyncMultiOptions'}
-                                        isCreateNewOption={EDITABLE_OPTIONS.includes(inputParam.name)}
-                                        onSelect={(newValue) => {
-                                            if (inputParam.loadConfig) setReloadTimestamp(Date.now().toString())
-                                            handleDataChange({ inputParam, newValue })
-                                        }}
-                                        onCreateNew={() => addAsyncOption(inputParam.name)}
-                                    />
-                                    {EDITABLE_OPTIONS.includes(inputParam.name) && data.inputs[inputParam.name] && (
-                                        <IconButton
-                                            title='Edit'
-                                            color='primary'
-                                            size='small'
-                                            onClick={() => editAsyncOption(inputParam.name, data.inputs[inputParam.name])}
-                                        >
-                                            <IconEdit />
-                                        </IconButton>
-                                    )}
-                                    {inputParam.refresh && (
-                                        <IconButton
-                                            title='Refresh'
-                                            color='primary'
-                                            size='small'
-                                            onClick={() => setReloadTimestamp(Date.now().toString())}
-                                        >
-                                            <IconRefresh />
-                                        </IconButton>
-                                    )}
-                                </div>
-                            </>
-                        )}
+                                <>
+                                    {data.inputParams.length === 1 && <div style={{ marginTop: 10 }} />}
+                                    <div
+                                        key={`${reloadTimestamp}_${data.id}_${JSON.stringify(data.inputs[inputParam.name])}`}
+                                        style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1 }}
+                                    >
+                                        <AsyncDropdown
+                                            disabled={disabled}
+                                            name={inputParam.name}
+                                            nodeData={data}
+                                            value={data.inputs[inputParam.name] ?? inputParam.default ?? 'choose an option'}
+                                            freeSolo={inputParam.freeSolo}
+                                            multiple={inputParam.type === 'asyncMultiOptions'}
+                                            isCreateNewOption={EDITABLE_OPTIONS.includes(inputParam.name)}
+                                            onSelect={(newValue) => {
+                                                if (inputParam.loadConfig) setReloadTimestamp(Date.now().toString())
+                                                handleDataChange({ inputParam, newValue })
+                                            }}
+                                            onCreateNew={() => addAsyncOption(inputParam.name)}
+                                        />
+                                        {EDITABLE_OPTIONS.includes(inputParam.name) && data.inputs[inputParam.name] && (
+                                            <IconButton
+                                                title='Edit'
+                                                color='primary'
+                                                size='small'
+                                                onClick={() => editAsyncOption(inputParam.name, data.inputs[inputParam.name])}
+                                            >
+                                                <IconEdit />
+                                            </IconButton>
+                                        )}
+                                        {inputParam.refresh && (
+                                            <IconButton
+                                                title='Refresh'
+                                                color='primary'
+                                                size='small'
+                                                onClick={() => setReloadTimestamp(Date.now().toString())}
+                                            >
+                                                <IconRefresh />
+                                            </IconButton>
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         {inputParam.type === 'timePicker' && (
                             <TimePicker
                                 disabled={disabled}

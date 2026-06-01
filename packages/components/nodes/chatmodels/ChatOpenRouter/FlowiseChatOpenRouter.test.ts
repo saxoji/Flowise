@@ -2,10 +2,18 @@ import { AIMessage, AIMessageChunk } from '@langchain/core/messages'
 import { ChatGenerationChunk } from '@langchain/core/outputs'
 import { ChatOpenRouter } from './FlowiseChatOpenRouter'
 
+const createProviderError = (message: string, status: number): Error => {
+    const error = new Error(message) as Error & { status: number; response: { status: number } }
+    error.status = status
+    error.response = { status }
+    return error
+}
+
 class DeterministicChatOpenRouter extends ChatOpenRouter {
     readonly attempts: string[] = []
     mode: 'success' | 'generateFallback' | 'streamBeforeTokenFallback' | 'streamAfterTokenFailure' = 'generateFallback'
     failuresRemaining = 1
+    failureStatus = 503
 
     protected createAttemptModel(attempt: any): any {
         const attempts = this.attempts
@@ -17,7 +25,7 @@ class DeterministicChatOpenRouter extends ChatOpenRouter {
                 attempts.push(`${attempt.modelName}:${attempt.apiKey}`)
                 if (mode === 'generateFallback' && model.failuresRemaining > 0) {
                     model.failuresRemaining -= 1
-                    throw new Error('first attempt failed')
+                    throw createProviderError('first attempt failed', model.failureStatus)
                 }
 
                 return {
@@ -35,7 +43,7 @@ class DeterministicChatOpenRouter extends ChatOpenRouter {
 
                 if (mode === 'streamBeforeTokenFallback' && model.failuresRemaining > 0) {
                     model.failuresRemaining -= 1
-                    throw new Error('stream failed before token')
+                    throw createProviderError('stream failed before token', model.failureStatus)
                 }
 
                 yield new ChatGenerationChunk({
@@ -56,12 +64,14 @@ const attachDeterministicAttemptModel = (
     options: {
         mode?: 'success' | 'generateFallback' | 'streamBeforeTokenFallback' | 'streamAfterTokenFailure'
         failuresRemaining?: number
+        failureStatus?: number
     } = {}
 ) => {
     const attempts: string[] = []
     const state = {
         mode: options.mode ?? 'success',
-        failuresRemaining: options.failuresRemaining ?? 0
+        failuresRemaining: options.failuresRemaining ?? 0,
+        failureStatus: options.failureStatus ?? 503
     }
 
     ;(model as any).createAttemptModel = (attempt: any): any => ({
@@ -69,7 +79,7 @@ const attachDeterministicAttemptModel = (
             attempts.push(`${attempt.modelName}:${attempt.apiKey}`)
             if (state.mode === 'generateFallback' && state.failuresRemaining > 0) {
                 state.failuresRemaining -= 1
-                throw new Error('first attempt failed')
+                throw createProviderError('first attempt failed', state.failureStatus)
             }
 
             return {
@@ -87,7 +97,7 @@ const attachDeterministicAttemptModel = (
 
             if (state.mode === 'streamBeforeTokenFallback' && state.failuresRemaining > 0) {
                 state.failuresRemaining -= 1
-                throw new Error('stream failed before token')
+                throw createProviderError('stream failed before token', state.failureStatus)
             }
 
             yield new ChatGenerationChunk({
@@ -152,6 +162,20 @@ describe('ChatOpenRouter fallback candidates', () => {
         expect(model.attempts).toEqual(['openai/gpt-5.4:key-a', 'openai/gpt-5.5:key-b'])
     })
 
+    it('does not fall back to another model/key pair for request or configuration errors', async () => {
+        const model = new DeterministicChatOpenRouter('chatOpenRouter_0', {
+            modelName: 'openai/gpt-5.4, openai/gpt-5.5',
+            apiKey: 'key-a, key-b',
+            roundRobinScope: 'test-generate-no-fallback-on-config-error',
+            roundRobinSessionId: 'session-a'
+        })
+        model.failureStatus = 400
+
+        await expect(model._generate([], {} as any)).rejects.toThrow('first attempt failed')
+
+        expect(model.attempts).toEqual(['openai/gpt-5.4:key-a'])
+    })
+
     it('falls back for streaming failures before the first token', async () => {
         const model = new DeterministicChatOpenRouter('chatOpenRouter_0', {
             modelName: 'openai/gpt-5.4, openai/gpt-5.5',
@@ -168,6 +192,27 @@ describe('ChatOpenRouter fallback candidates', () => {
 
         expect(chunks).toEqual(['ok'])
         expect(model.attempts).toEqual(['openai/gpt-5.4:key-a', 'openai/gpt-5.5:key-a'])
+    })
+
+    it('does not fall back for streaming request or configuration errors before the first token', async () => {
+        const model = new DeterministicChatOpenRouter('chatOpenRouter_0', {
+            modelName: 'openai/gpt-5.4, openai/gpt-5.5',
+            apiKey: 'key-a',
+            roundRobinScope: 'test-stream-no-fallback-on-config-error',
+            roundRobinSessionId: 'session-a'
+        })
+        model.mode = 'streamBeforeTokenFallback'
+        model.failureStatus = 400
+
+        const chunks: string[] = []
+        await expect(async () => {
+            for await (const chunk of model._streamResponseChunks([], {} as any)) {
+                chunks.push(chunk.text)
+            }
+        }).rejects.toThrow('stream failed before token')
+
+        expect(chunks).toEqual([])
+        expect(model.attempts).toEqual(['openai/gpt-5.4:key-a'])
     })
 
     it('does not fall back for streaming failures after a token was yielded', async () => {

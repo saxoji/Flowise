@@ -11,7 +11,7 @@ import { supportsSamplingParams } from '../../../src/anthropicUtils'
 import { ChatAnthropic } from '../ChatAnthropic/FlowiseChatAnthropic'
 import { ChatGoogleGenerativeAI } from '../ChatGoogleGenerativeAI/FlowiseChatGoogleGenerativeAI'
 import { ChatOpenAI } from '../ChatOpenAI/FlowiseChatOpenAI'
-import { ChatOpenRouter } from '../ChatOpenRouter/FlowiseChatOpenRouter'
+import { ChatOpenRouter, isTransientProviderFailure } from '../ChatOpenRouter/FlowiseChatOpenRouter'
 import { ChatXAI } from '../ChatXAI/FlowiseChatXAI'
 
 export type VoraRouter2FallbackProvider = 'openai' | 'xai' | 'anthropic' | 'google'
@@ -59,9 +59,7 @@ const cloneVoraRouter2Fields = (fields?: VoraRouter2Fields): VoraRouter2Fields |
 }
 
 const cloneFallbackConfigs = (fallbackConfigs: VoraRouter2FallbackConfig[] = []): VoraRouter2FallbackConfig[] =>
-    fallbackConfigs
-        .map((fallback) => ({ ...fallback }))
-        .sort((a, b) => a.order - b.order)
+    fallbackConfigs.map((fallback) => ({ ...fallback })).sort((a, b) => a.order - b.order)
 
 const getCommonFallbackFields = (fields?: VoraRouter2Fields): CommonFallbackFields => ({
     cache: fields?.cache,
@@ -118,7 +116,13 @@ export class ChatVoraRouter2 extends ChatOpenRouter {
         try {
             return await super._generate(messages, options, runManager)
         } catch (primaryError) {
-            if (!this.fallbackConfigs.length || this.isAbortErrorForRouter2(primaryError, options)) throw primaryError
+            if (
+                !this.fallbackConfigs.length ||
+                this.isAbortErrorForRouter2(primaryError, options) ||
+                !isTransientProviderFailure(primaryError)
+            ) {
+                throw primaryError
+            }
 
             return await this.generateWithProviderFallbacks(messages, options, runManager, primaryError)
         }
@@ -139,7 +143,14 @@ export class ChatVoraRouter2 extends ChatOpenRouter {
             }
             return
         } catch (primaryError) {
-            if (primaryHasYieldedChunk || !this.fallbackConfigs.length || this.isAbortErrorForRouter2(primaryError, options)) throw primaryError
+            if (
+                primaryHasYieldedChunk ||
+                !this.fallbackConfigs.length ||
+                this.isAbortErrorForRouter2(primaryError, options) ||
+                !isTransientProviderFailure(primaryError)
+            ) {
+                throw primaryError
+            }
 
             yield* this.streamWithProviderFallbacks(messages, options, runManager, primaryError)
         }
@@ -223,6 +234,7 @@ export class ChatVoraRouter2 extends ChatOpenRouter {
                 return result
             } catch (error) {
                 if (this.isAbortErrorForRouter2(error, options)) throw error
+                if (!isTransientProviderFailure(error)) throw error
                 lastError = error
             }
         }
@@ -253,6 +265,7 @@ export class ChatVoraRouter2 extends ChatOpenRouter {
                 return
             } catch (error) {
                 if (hasYieldedChunk || this.isAbortErrorForRouter2(error, options)) throw error
+                if (!isTransientProviderFailure(error)) throw error
                 lastError = error
             }
         }

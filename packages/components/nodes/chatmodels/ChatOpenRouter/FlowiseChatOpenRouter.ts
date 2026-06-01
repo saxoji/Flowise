@@ -29,11 +29,114 @@ type SessionAttemptState = {
     lastUsedAt: number
 }
 
+type ProviderErrorFacts = {
+    statuses: number[]
+    codes: string[]
+    types: string[]
+    names: string[]
+    messages: string[]
+}
+
 const ROUND_ROBIN_STATE_TTL_MS = 24 * 60 * 60 * 1000
 const ROUND_ROBIN_STATE_PRUNE_INTERVAL_MS = 60 * 60 * 1000
 const roundRobinAssignmentStates = new Map<string, RoundRobinState>()
 const roundRobinSessionStates = new Map<string, SessionAttemptState>()
 let lastRoundRobinStatePrune = 0
+const TRANSIENT_PROVIDER_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504, 529])
+const TRANSIENT_PROVIDER_ERROR_CODES = new Set([
+    'ECONNABORTED',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'EAI_AGAIN',
+    'ENOTFOUND',
+    'ETIMEDOUT',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_HEADERS_TIMEOUT',
+    'UND_ERR_SOCKET'
+])
+const TRANSIENT_PROVIDER_ERROR_TYPES = new Set([
+    'api_connection_error',
+    'overloaded_error',
+    'rate_limit_error',
+    'server_error',
+    'timeout_error'
+])
+const TRANSIENT_PROVIDER_ERROR_NAMES = new Set(['APIConnectionError', 'APIConnectionTimeoutError', 'TimeoutError'])
+
+const toStatusCode = (value: unknown): number | undefined => {
+    if (typeof value === 'number' && Number.isInteger(value)) return value
+    if (typeof value === 'string' && /^\d{3}$/.test(value.trim())) return parseInt(value.trim(), 10)
+    return undefined
+}
+
+const addStringFact = (target: string[], value: unknown): void => {
+    if (typeof value === 'string' && value.trim()) target.push(value.trim())
+}
+
+const isRecord = (value: unknown): value is Record<string, any> => typeof value === 'object' && value !== null
+
+const collectProviderErrorFacts = (value: unknown, facts: ProviderErrorFacts, seen = new Set<unknown>(), depth = 0): ProviderErrorFacts => {
+    if (!value || seen.has(value) || depth > 5) return facts
+
+    if (value instanceof Error) {
+        addStringFact(facts.names, value.name)
+        addStringFact(facts.messages, value.message)
+    }
+
+    if (!isRecord(value)) return facts
+    seen.add(value)
+
+    for (const statusField of ['status', 'statusCode']) {
+        const status = toStatusCode(value[statusField])
+        if (status !== undefined) facts.statuses.push(status)
+    }
+
+    for (const codeField of ['code', 'errno']) {
+        addStringFact(facts.codes, value[codeField])
+    }
+
+    addStringFact(facts.types, value.type)
+    addStringFact(facts.names, value.name)
+    addStringFact(facts.messages, value.message)
+
+    for (const childField of ['cause', 'error', 'response', 'data', 'body']) {
+        collectProviderErrorFacts(value[childField], facts, seen, depth + 1)
+    }
+
+    return facts
+}
+
+const isTransientProviderErrorMessage = (message: string): boolean => {
+    const normalized = message.toLowerCase()
+
+    return (
+        /\b(408|429|500|502|503|504|529)\b/.test(normalized) ||
+        normalized.includes('bad gateway') ||
+        normalized.includes('gateway timeout') ||
+        normalized.includes('overloaded') ||
+        normalized.includes('rate limit') ||
+        normalized.includes('service unavailable') ||
+        normalized.includes('too many requests')
+    )
+}
+
+export const isTransientProviderFailure = (error: unknown): boolean => {
+    const facts = collectProviderErrorFacts(error, {
+        statuses: [],
+        codes: [],
+        types: [],
+        names: [],
+        messages: []
+    })
+
+    if (facts.statuses.some((status) => status >= 400 && status < 500 && !TRANSIENT_PROVIDER_STATUS_CODES.has(status))) return false
+    if (facts.statuses.length) return facts.statuses.some((status) => TRANSIENT_PROVIDER_STATUS_CODES.has(status) || status >= 500)
+    if (facts.codes.some((code) => TRANSIENT_PROVIDER_ERROR_CODES.has(code))) return true
+    if (facts.types.some((type) => TRANSIENT_PROVIDER_ERROR_TYPES.has(type))) return true
+    if (facts.names.some((name) => TRANSIENT_PROVIDER_ERROR_NAMES.has(name))) return true
+
+    return facts.messages.some(isTransientProviderErrorMessage)
+}
 
 const splitCommaSeparatedValues = (value: unknown): string[] => {
     if (typeof value !== 'string') return []
@@ -200,6 +303,7 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
                 return result
             } catch (error) {
                 if (this.isAbortError(error, options)) throw error
+                if (!isTransientProviderFailure(error)) throw error
                 lastError = error
                 this.trackFailedAttempt(attempt, failedApiKeyIndexes, failedModelNames)
             }
@@ -245,6 +349,7 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
                 return
             } catch (error) {
                 if (hasYieldedChunk || this.isAbortError(error, options)) throw error
+                if (!isTransientProviderFailure(error)) throw error
                 lastError = error
                 this.trackFailedAttempt(attempt, failedApiKeyIndexes, failedModelNames)
             }
