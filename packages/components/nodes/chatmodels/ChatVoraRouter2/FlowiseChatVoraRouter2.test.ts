@@ -2,10 +2,12 @@ import { AIMessage, AIMessageChunk } from '@langchain/core/messages'
 import { ChatGenerationChunk } from '@langchain/core/outputs'
 import { ChatVoraRouter2, VoraRouter2FallbackConfig } from './FlowiseChatVoraRouter2'
 
-const createProviderError = (message: string, status: number): Error => {
-    const error = new Error(message) as Error & { status: number; response: { status: number } }
-    error.status = status
-    error.response = { status }
+const createProviderError = (message: string, status?: number): Error => {
+    const error = new Error(message) as Error & { status?: number; response?: { status: number } }
+    if (status !== undefined) {
+        error.status = status
+        error.response = { status }
+    }
     return error
 }
 
@@ -13,7 +15,9 @@ class DeterministicChatVoraRouter2 extends ChatVoraRouter2 {
     readonly primaryAttempts: string[] = []
     readonly fallbackAttempts: string[] = []
     primaryMode: 'fail' | 'streamAfterTokenFailure' = 'fail'
-    primaryFailureStatus = 503
+    primaryFailureMessage = 'primary failed'
+    primaryStreamFailureMessage = 'primary stream failed before token'
+    primaryFailureStatus: number | undefined = 503
     fallbackFailureStatuses: number[] = []
 
     protected createAttemptModel(attempt: any): any {
@@ -21,7 +25,7 @@ class DeterministicChatVoraRouter2 extends ChatVoraRouter2 {
         return {
             async _generate() {
                 model.primaryAttempts.push(`${attempt.modelName}:${attempt.apiKey}`)
-                throw createProviderError('primary failed', model.primaryFailureStatus)
+                throw createProviderError(model.primaryFailureMessage, model.primaryFailureStatus)
             },
             async *_streamResponseChunks() {
                 model.primaryAttempts.push(`${attempt.modelName}:${attempt.apiKey}`)
@@ -32,7 +36,7 @@ class DeterministicChatVoraRouter2 extends ChatVoraRouter2 {
                     })
                     throw new Error('primary stream failed after token')
                 }
-                throw createProviderError('primary stream failed before token', model.primaryFailureStatus)
+                throw createProviderError(model.primaryStreamFailureMessage, model.primaryFailureStatus)
             }
         }
     }
@@ -122,6 +126,44 @@ describe('ChatVoraRouter2 provider fallbacks', () => {
         expect(model.fallbackAttempts).toEqual([])
     })
 
+    it('runs provider fallbacks when the primary OpenRouter failure is forbidden', async () => {
+        const model = new DeterministicChatVoraRouter2(
+            'chatVoraRouter2_0',
+            {
+                modelName: 'openrouter-a, openrouter-b',
+                apiKey: 'openrouter-key'
+            },
+            fallbackConfigs
+        )
+        model.primaryFailureStatus = 403
+
+        const result = await model._generate([], {} as any)
+
+        expect(result.generations[0].text).toBe('fallback ok')
+        expect(model.primaryAttempts).toEqual(['openrouter-a:openrouter-key', 'openrouter-b:openrouter-key'])
+        expect(model.fallbackAttempts).toEqual(['xai:grok-fallback'])
+        expect(result.generations[0].generationInfo?.vora_router2_fallback_provider).toBe('xai')
+    })
+
+    it('runs provider fallbacks when the primary OpenRouter failure message is forbidden', async () => {
+        const model = new DeterministicChatVoraRouter2(
+            'chatVoraRouter2_0',
+            {
+                modelName: 'openrouter-a, openrouter-b',
+                apiKey: 'openrouter-key'
+            },
+            fallbackConfigs
+        )
+        model.primaryFailureMessage = 'Forbidden'
+        model.primaryFailureStatus = undefined
+
+        const result = await model._generate([], {} as any)
+
+        expect(result.generations[0].text).toBe('fallback ok')
+        expect(model.primaryAttempts).toEqual(['openrouter-a:openrouter-key', 'openrouter-b:openrouter-key'])
+        expect(model.fallbackAttempts).toEqual(['xai:grok-fallback'])
+    })
+
     it('falls back for streaming primary failures before the first token', async () => {
         const model = new DeterministicChatVoraRouter2(
             'chatVoraRouter2_0',
@@ -164,6 +206,27 @@ describe('ChatVoraRouter2 provider fallbacks', () => {
         expect(model.fallbackAttempts).toEqual([])
     })
 
+    it('runs streaming provider fallbacks when the primary OpenRouter failure is forbidden before the first token', async () => {
+        const model = new DeterministicChatVoraRouter2(
+            'chatVoraRouter2_0',
+            {
+                modelName: 'openrouter-a, openrouter-b',
+                apiKey: 'openrouter-key'
+            },
+            fallbackConfigs
+        )
+        model.primaryFailureStatus = 403
+
+        const chunks: string[] = []
+        for await (const chunk of model._streamResponseChunks([], {} as any)) {
+            chunks.push(chunk.text)
+        }
+
+        expect(chunks).toEqual(['fallback ok'])
+        expect(model.primaryAttempts).toEqual(['openrouter-a:openrouter-key', 'openrouter-b:openrouter-key'])
+        expect(model.fallbackAttempts).toEqual(['xai:grok-fallback'])
+    })
+
     it('stops the provider fallback chain when a fallback provider returns a request or configuration error', async () => {
         const model = new DeterministicChatVoraRouter2(
             'chatVoraRouter2_0',
@@ -178,6 +241,24 @@ describe('ChatVoraRouter2 provider fallbacks', () => {
         await expect(model._generate([], {} as any)).rejects.toThrow('fallback failed')
 
         expect(model.fallbackAttempts).toEqual(['xai:grok-fallback'])
+    })
+
+    it('continues the provider fallback chain when a fallback provider returns forbidden', async () => {
+        const model = new DeterministicChatVoraRouter2(
+            'chatVoraRouter2_0',
+            {
+                modelName: 'openrouter-a, openrouter-b',
+                apiKey: 'openrouter-key'
+            },
+            fallbackConfigs
+        )
+        model.fallbackFailureStatuses = [403]
+
+        const result = await model._generate([], {} as any)
+
+        expect(result.generations[0].text).toBe('fallback ok')
+        expect(model.fallbackAttempts).toEqual(['xai:grok-fallback', 'openai:gpt-fallback'])
+        expect(result.generations[0].generationInfo?.vora_router2_fallback_provider).toBe('openai')
     })
 
     it('does not switch providers after a streaming primary attempt has yielded a token', async () => {

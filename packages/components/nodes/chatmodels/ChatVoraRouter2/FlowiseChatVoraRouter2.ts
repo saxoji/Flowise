@@ -11,7 +11,7 @@ import { supportsSamplingParams } from '../../../src/anthropicUtils'
 import { ChatAnthropic } from '../ChatAnthropic/FlowiseChatAnthropic'
 import { ChatGoogleGenerativeAI } from '../ChatGoogleGenerativeAI/FlowiseChatGoogleGenerativeAI'
 import { ChatOpenAI } from '../ChatOpenAI/FlowiseChatOpenAI'
-import { ChatOpenRouter, isTransientProviderFailure } from '../ChatOpenRouter/FlowiseChatOpenRouter'
+import { ChatOpenRouter, isProviderFallbackEligibleFailure } from '../ChatOpenRouter/FlowiseChatOpenRouter'
 import { ChatXAI } from '../ChatXAI/FlowiseChatXAI'
 
 export type VoraRouter2FallbackProvider = 'openai' | 'xai' | 'anthropic' | 'google'
@@ -119,7 +119,7 @@ export class ChatVoraRouter2 extends ChatOpenRouter {
             if (
                 !this.fallbackConfigs.length ||
                 this.isAbortErrorForRouter2(primaryError, options) ||
-                !isTransientProviderFailure(primaryError)
+                !isProviderFallbackEligibleFailure(primaryError)
             ) {
                 throw primaryError
             }
@@ -147,7 +147,7 @@ export class ChatVoraRouter2 extends ChatOpenRouter {
                 primaryHasYieldedChunk ||
                 !this.fallbackConfigs.length ||
                 this.isAbortErrorForRouter2(primaryError, options) ||
-                !isTransientProviderFailure(primaryError)
+                !isProviderFallbackEligibleFailure(primaryError)
             ) {
                 throw primaryError
             }
@@ -234,7 +234,7 @@ export class ChatVoraRouter2 extends ChatOpenRouter {
                 return result
             } catch (error) {
                 if (this.isAbortErrorForRouter2(error, options)) throw error
-                if (!isTransientProviderFailure(error)) throw error
+                if (!isProviderFallbackEligibleFailure(error)) throw error
                 lastError = error
             }
         }
@@ -265,7 +265,7 @@ export class ChatVoraRouter2 extends ChatOpenRouter {
                 return
             } catch (error) {
                 if (hasYieldedChunk || this.isAbortErrorForRouter2(error, options)) throw error
-                if (!isTransientProviderFailure(error)) throw error
+                if (!isProviderFallbackEligibleFailure(error)) throw error
                 lastError = error
             }
         }

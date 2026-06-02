@@ -138,6 +138,26 @@ export const isTransientProviderFailure = (error: unknown): boolean => {
     return facts.messages.some(isTransientProviderErrorMessage)
 }
 
+const isForbiddenProviderFailure = (error: unknown): boolean => {
+    const facts = collectProviderErrorFacts(error, {
+        statuses: [],
+        codes: [],
+        types: [],
+        names: [],
+        messages: []
+    })
+
+    if (facts.statuses.some((status) => status === 403)) return true
+
+    return facts.messages.some((message) => {
+        const normalized = message.trim().toLowerCase()
+        return normalized === 'forbidden' || normalized.includes('403 forbidden')
+    })
+}
+
+export const isProviderFallbackEligibleFailure = (error: unknown): boolean =>
+    isTransientProviderFailure(error) || isForbiddenProviderFailure(error)
+
 const splitCommaSeparatedValues = (value: unknown): string[] => {
     if (typeof value !== 'string') return []
 
@@ -303,7 +323,7 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
                 return result
             } catch (error) {
                 if (this.isAbortError(error, options)) throw error
-                if (!isTransientProviderFailure(error)) throw error
+                if (!isProviderFallbackEligibleFailure(error)) throw error
                 lastError = error
                 this.trackFailedAttempt(attempt, failedApiKeyIndexes, failedModelNames)
             }
@@ -349,7 +369,7 @@ export class ChatOpenRouter extends LangchainChatOpenAI implements IVisionChatMo
                 return
             } catch (error) {
                 if (hasYieldedChunk || this.isAbortError(error, options)) throw error
-                if (!isTransientProviderFailure(error)) throw error
+                if (!isProviderFallbackEligibleFailure(error)) throw error
                 lastError = error
                 this.trackFailedAttempt(attempt, failedApiKeyIndexes, failedModelNames)
             }

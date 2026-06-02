@@ -176,6 +176,21 @@ describe('ChatOpenRouter fallback candidates', () => {
         expect(model.attempts).toEqual(['openai/gpt-5.4:key-a'])
     })
 
+    it('falls back to another model/key pair for forbidden errors', async () => {
+        const model = new DeterministicChatOpenRouter('chatOpenRouter_0', {
+            modelName: 'openai/gpt-5.4, openai/gpt-5.5',
+            apiKey: 'key-a, key-b',
+            roundRobinScope: 'test-generate-fallback-on-forbidden-error',
+            roundRobinSessionId: 'session-a'
+        })
+        model.failureStatus = 403
+
+        const result = await model._generate([], {} as any)
+
+        expect(result.generations[0].text).toBe('ok')
+        expect(model.attempts).toEqual(['openai/gpt-5.4:key-a', 'openai/gpt-5.5:key-b'])
+    })
+
     it('falls back for streaming failures before the first token', async () => {
         const model = new DeterministicChatOpenRouter('chatOpenRouter_0', {
             modelName: 'openai/gpt-5.4, openai/gpt-5.5',
@@ -184,6 +199,25 @@ describe('ChatOpenRouter fallback candidates', () => {
             roundRobinSessionId: 'session-a'
         })
         model.mode = 'streamBeforeTokenFallback'
+
+        const chunks: string[] = []
+        for await (const chunk of model._streamResponseChunks([], {} as any)) {
+            chunks.push(chunk.text)
+        }
+
+        expect(chunks).toEqual(['ok'])
+        expect(model.attempts).toEqual(['openai/gpt-5.4:key-a', 'openai/gpt-5.5:key-a'])
+    })
+
+    it('falls back for streaming forbidden errors before the first token', async () => {
+        const model = new DeterministicChatOpenRouter('chatOpenRouter_0', {
+            modelName: 'openai/gpt-5.4, openai/gpt-5.5',
+            apiKey: 'key-a',
+            roundRobinScope: 'test-stream-fallback-on-forbidden-error',
+            roundRobinSessionId: 'session-a'
+        })
+        model.mode = 'streamBeforeTokenFallback'
+        model.failureStatus = 403
 
         const chunks: string[] = []
         for await (const chunk of model._streamResponseChunks([], {} as any)) {
