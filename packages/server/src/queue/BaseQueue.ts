@@ -9,6 +9,34 @@ const WORKER_CONCURRENCY = process.env.WORKER_CONCURRENCY ? parseInt(process.env
 const REMOVE_ON_AGE = process.env.REMOVE_ON_AGE ? parseInt(process.env.REMOVE_ON_AGE) : -1
 const REMOVE_ON_COUNT = process.env.REMOVE_ON_COUNT ? parseInt(process.env.REMOVE_ON_COUNT) : -1
 
+const stringifyError = (error: unknown): string => {
+    if (error instanceof Error) {
+        const errorRecord = error as Error & Record<string, unknown>
+        const details = [
+            `name=${error.name}`,
+            `message=${error.message}`,
+            'code' in errorRecord ? `code=${String(errorRecord.code)}` : undefined,
+            'errno' in errorRecord ? `errno=${String(errorRecord.errno)}` : undefined,
+            'syscall' in errorRecord ? `syscall=${String(errorRecord.syscall)}` : undefined,
+            'address' in errorRecord ? `address=${String(errorRecord.address)}` : undefined,
+            'port' in errorRecord ? `port=${String(errorRecord.port)}` : undefined,
+            'command' in errorRecord ? `command=${String(errorRecord.command)}` : undefined,
+            'status' in errorRecord ? `status=${String(errorRecord.status)}` : undefined,
+            'statusCode' in errorRecord ? `statusCode=${String(errorRecord.statusCode)}` : undefined
+        ].filter(Boolean)
+
+        return `${details.join(' ')}${error.stack ? `\n${error.stack}` : ''}`
+    }
+
+    if (typeof error === 'string') return error
+
+    try {
+        return JSON.stringify(error)
+    } catch {
+        return String(error)
+    }
+}
+
 export abstract class BaseQueue {
     protected queue: Queue
     protected queueEvents: QueueEvents
@@ -73,8 +101,9 @@ export abstract class BaseQueue {
                     } catch (error) {
                         const end = new Date().getTime()
                         logger.error(
-                            `[BaseQueue] Job ${job.id} failed in ${this.queue.name} at ${new Date().toISOString()} (${end - start}ms):`,
-                            { error }
+                            `[BaseQueue] Job ${job.id} failed in ${this.queue.name} at ${new Date().toISOString()} (${
+                                end - start
+                            }ms): ${stringifyError(error)}`
                         )
                         throw error
                     }
@@ -87,7 +116,7 @@ export abstract class BaseQueue {
 
             // Add error listeners to the worker
             this.worker.on('error', (err) => {
-                logger.error(`[BaseQueue] Worker error for queue "${this.queue.name}":`, { error: err })
+                logger.error(`[BaseQueue] Worker error for queue "${this.queue.name}": ${stringifyError(err)}`)
             })
 
             this.worker.on('closed', () => {
@@ -95,7 +124,15 @@ export abstract class BaseQueue {
             })
 
             this.worker.on('failed', (job, err) => {
-                logger.error(`[BaseQueue] Worker job ${job?.id} failed in queue "${this.queue.name}":`, { error: err })
+                logger.error(`[BaseQueue] Worker job ${job?.id} failed in queue "${this.queue.name}": ${stringifyError(err)}`)
+            })
+
+            this.worker.on('stalled', (jobId) => {
+                logger.warn(`[BaseQueue] Worker job ${jobId} stalled in queue "${this.queue.name}"`)
+            })
+
+            this.worker.on('ioredis:close', () => {
+                logger.warn(`[BaseQueue] Worker Redis connection closed for queue "${this.queue.name}"`)
             })
 
             logger.info(`[BaseQueue] Worker created successfully for queue "${this.queue.name}"`)
