@@ -50,6 +50,14 @@ export abstract class BaseQueue {
             streams: { events: { maxLen: QUEUE_REDIS_EVENT_STREAM_MAX_LEN } }
         })
         this.queueEvents = new QueueEvents(queueName, { connection: this.connection })
+
+        // The QueueEvents stream connection (used by job.waitUntilFinished) can drop when Redis
+        // restarts. Without an 'error' listener these surface as unhandled errors; logging them
+        // also gives visibility into the windows where completion events may be missed (the
+        // resilient wait in buildChatflow recovers from those by polling job state).
+        this.queueEvents.on('error', (err) => {
+            logger.error(`[BaseQueue] QueueEvents error for queue "${queueName}": ${stringifyError(err)}`)
+        })
     }
 
     abstract processJob(data: any): Promise<any>

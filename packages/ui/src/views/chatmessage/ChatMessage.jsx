@@ -936,11 +936,16 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
         }
 
         if (data.followUpPrompts) {
-            const followUpPrompts = JSON.parse(data.followUpPrompts)
-            if (typeof followUpPrompts === 'string') {
-                setFollowUpPrompts(JSON.parse(followUpPrompts))
-            } else {
-                setFollowUpPrompts(followUpPrompts)
+            // Defensive: the wire value is normally a JSON string, but guard against an
+            // already-parsed array/object or malformed payload so a parse error here can never
+            // abort the SSE onmessage handler (which would skip the trailing 'end' event).
+            try {
+                let parsed = typeof data.followUpPrompts === 'string' ? JSON.parse(data.followUpPrompts) : data.followUpPrompts
+                if (typeof parsed === 'string') parsed = JSON.parse(parsed)
+                setFollowUpPrompts(Array.isArray(parsed) ? parsed : [])
+            } catch (e) {
+                console.error('Failed to parse followUpPrompts from metadata:', e)
+                setFollowUpPrompts([])
             }
         }
     }
@@ -1593,8 +1598,12 @@ const ChatMessage = ({ open, chatflowid, isAgentCanvas, isDialog, previews, setP
                     setFollowUpPrompts(lastMessage.followUpPrompts)
                 }
                 if (typeof lastMessage.followUpPrompts === 'string') {
-                    const followUpPrompts = JSON.parse(lastMessage.followUpPrompts)
-                    setFollowUpPrompts(followUpPrompts)
+                    try {
+                        setFollowUpPrompts(JSON.parse(lastMessage.followUpPrompts))
+                    } catch (e) {
+                        console.error('Failed to parse followUpPrompts from history:', e)
+                        setFollowUpPrompts([])
+                    }
                 }
             } else if (lastMessage.type === 'userMessage') {
                 setFollowUpPrompts([])

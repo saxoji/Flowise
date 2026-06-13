@@ -70,6 +70,7 @@ import { getErrorMessage } from '../errors/utils'
 import { FLOWISE_METRIC_COUNTERS, FLOWISE_COUNTER_STATUS, IMetricsProvider } from '../Interface.Metrics'
 import { getWorkspaceSearchOptions } from '../enterprise/utils/ControllerServiceUtils'
 import { OMIT_QUEUE_JOB_DATA } from './constants'
+import { resilientWaitUntilFinished } from '../queue/waitUtils'
 import { executeAgentFlow } from './buildAgentflow'
 import { Workspace } from '../enterprise/database/entities/workspace.entity'
 import { Organization } from '../enterprise/database/entities/organization.entity'
@@ -1088,7 +1089,13 @@ export const utilBuildChatflow = async (req: Request, isInternal: boolean = fals
             logger.debug(`[server]: [${orgId}/${chatflow.id}/${chatId}]: Job added to queue: ${job.id}`)
 
             const queueEvents = predictionQueue.getQueueEvents()
-            const result = await job.waitUntilFinished(queueEvents)
+            // Resilient wait: if the QueueEvents stream connection drops (e.g. a Redis restart),
+            // the completion event can be missed and a plain waitUntilFinished would hang forever,
+            // leaving the SSE request stuck in an infinite loading state. This polls the job's
+            // actual state on timeout so a missed event is recovered instead of hanging.
+            const result = await resilientWaitUntilFinished(predictionQueue.getQueue(), job, queueEvents, {
+                label: `prediction:${chatId}`
+            })
             appServer.abortControllerPool.remove(abortControllerId)
             if (!result) {
                 throw new Error('Job execution failed')
