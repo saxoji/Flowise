@@ -9,6 +9,7 @@ import { mysqlMigrations } from './database/migrations/mysql'
 import { mariadbMigrations } from './database/migrations/mariadb'
 import { postgresMigrations } from './database/migrations/postgres'
 import logger from './utils/logger'
+import { getDatabasePoolSize, getDatabaseConnectionTimeoutMillis, getDatabaseStatementTimeoutMillis } from './utils/databasePoolConfig'
 
 let appDataSource: DataSource
 
@@ -62,7 +63,23 @@ export const init = async (): Promise<void> => {
                 ssl: getDatabaseSSLFromEnv()
             })
             break
-        case 'postgres':
+        case 'postgres': {
+            // Size the pool to the process role: workers auto-size to WORKER_CONCURRENCY (so jobs
+            // do not starve on connection acquisition), web processes keep the historical default
+            // of 10. See utils/databasePoolConfig for the precedence rules.
+            const postgresExtra: Record<string, unknown> = {
+                idleTimeoutMillis: 120000,
+                max: getDatabasePoolSize()
+            }
+            // Opt-in tunables — omitted entirely when their env var is unset, so default behavior
+            // is unchanged. connectionTimeoutMillis only bounds how long acquiring a pooled
+            // connection waits; it never interrupts a running query, custom-tool call, or LLM
+            // completion (those do not hold a DB connection while they run).
+            const connectionTimeoutMillis = getDatabaseConnectionTimeoutMillis()
+            if (connectionTimeoutMillis !== undefined) postgresExtra.connectionTimeoutMillis = connectionTimeoutMillis
+            const statementTimeout = getDatabaseStatementTimeoutMillis()
+            if (statementTimeout !== undefined) postgresExtra.statement_timeout = statementTimeout
+
             appDataSource = new DataSource({
                 type: 'postgres',
                 host: process.env.DATABASE_HOST,
@@ -75,9 +92,7 @@ export const init = async (): Promise<void> => {
                 migrationsRun: false,
                 entities: Object.values(entities),
                 migrations: postgresMigrations,
-                extra: {
-                    idleTimeoutMillis: 120000
-                },
+                extra: postgresExtra,
                 logging: ['error', 'warn', 'info', 'log'],
                 logger: 'advanced-console',
                 logNotifications: true,
@@ -87,6 +102,7 @@ export const init = async (): Promise<void> => {
                 applicationName: 'Flowise'
             })
             break
+        }
         default:
             homePath = process.env.DATABASE_PATH ?? flowisePath
             appDataSource = new DataSource({
