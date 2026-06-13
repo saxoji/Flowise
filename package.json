@@ -99,7 +99,7 @@
     },
     "engines": {
         "node": "^20",
-        "pnpm": "^10.26.0"
+        "pnpm": ">=10.21.0"
     },
     "resolutions": {
         "@anthropic-ai/sdk": "^0.73.0",
