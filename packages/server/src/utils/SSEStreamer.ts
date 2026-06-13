@@ -140,6 +140,35 @@ export class SSEStreamer implements IServerSideEventStreamer {
         }
     }
 
+    /**
+     * Gracefully terminate every open client (and observer) connection — used on server shutdown
+     * / scale-in. Without this, a terminating web instance leaves in-flight SSE sockets frozen with
+     * no terminal event, so API consumers wait forever for `end` (infinite loading). Here we emit a
+     * terminal `error` event (NOT `end`, so an interrupted stream is never mistaken for a completed
+     * one) and close each socket, letting the consumer stop waiting and re-fetch the final result by
+     * chatId. Shutdown-only — never runs during normal streaming. Safe with zero clients; never
+     * throws. Returns the number of client connections drained.
+     */
+    closeAllClients(message: string = 'stream interrupted: server is shutting down, please retry'): number {
+        let drained = 0
+        for (const [, client] of this.clients) {
+            try {
+                const clientResponse = {
+                    event: 'error',
+                    data: message
+                }
+                client.response.write('message:\ndata:' + JSON.stringify(clientResponse) + '\n\n')
+                client.response.end()
+            } catch {
+                // client already disconnected — nothing to do
+            }
+            drained++
+        }
+        this.clients.clear()
+        this.observers.clear()
+        return drained
+    }
+
     streamCustomEvent(chatId: string, eventType: string, data: any) {
         const clientResponse = {
             event: eventType,

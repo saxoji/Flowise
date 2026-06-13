@@ -372,6 +372,14 @@ export class App {
     async stopApp() {
         try {
             this.sseStreamer.stopHeartbeat()
+            // Drain open SSE streams BEFORE tearing down the Redis subscriber and exiting, so
+            // in-flight clients receive a terminal event + socket close on scale-in/redeploy
+            // instead of a frozen connection (which leaves API consumers hanging for `end`).
+            // Shutdown-only; no effect on normal streaming. Clients recover the final result by chatId.
+            const drainedStreams = this.sseStreamer.closeAllClients()
+            if (drainedStreams > 0) {
+                logger.info(`👋 [server]: Drained ${drainedStreams} open SSE stream(s) before shutdown`)
+            }
             const removePromises: any[] = []
             removePromises.push(this.telemetry.flush())
             if (this.queueManager) {
