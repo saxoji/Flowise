@@ -7,5 +7,8 @@ packages:
 # with ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED (flowise-embed) or skips required native builds.
 onlyBuiltDependencies:
     - faiss-node
-    - flowise-embed
     - sqlite3
+    - flowise-embed
+    # pnpm 10.26+ matches git-hosted deps by their resolved tarball URL, not the bare name.
+    # Update the hash below if saxoji/FlowiseChatEmbed is bumped and the lockfile re-resolves.
+    - 'flowise-embed@https://codeload.github.com/saxoji/FlowiseChatEmbed/tar.gz/1404920a3c279b52bdafe97936d35f16ec61e752'
