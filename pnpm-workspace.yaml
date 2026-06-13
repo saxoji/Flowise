@@ -1,2 +1,11 @@
 packages:
     - 'packages/*'
+
+# pnpm 10.26+ reads the build-script allowlist from here (no longer from package.json's
+# `pnpm` field) and enforces stricter security for git-hosted dependencies. These packages
+# run native/prepare build scripts and must be allowlisted, otherwise `pnpm install` fails
+# with ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED (flowise-embed) or skips required native builds.
+onlyBuiltDependencies:
+    - faiss-node
+    - flowise-embed
+    - sqlite3
